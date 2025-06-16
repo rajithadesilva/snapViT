@@ -11,7 +11,7 @@ from dataset import VineyardDataset
 
 # --- Configuration ---
 CONFIG = {
-    'data_root': 'vineyard_dataset',
+    'data_root': 'datasets/vineyard_dataset',
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'feature_dim': 128,
     'num_ugv_views': 8,
