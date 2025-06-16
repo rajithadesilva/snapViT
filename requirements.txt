@@ -1,0 +1,7 @@
+torch
+torchvision
+timm
+tqdm
+pandas
+Pillow
+pyproj
