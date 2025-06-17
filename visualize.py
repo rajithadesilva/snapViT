@@ -134,17 +134,30 @@ def main(args):
             # Convert feature maps to images
             ground_bev_img = feature_map_to_rgb(ground_bev)
             overhead_bev_img = feature_map_to_rgb(overhead_bev_resized)
+            
+            # --- MODIFIED: Start of changes ---
+
+            # Get the size of the original UAV image for resizing
+            with open(os.path.join(scene_folder_path, 'metadata.json'), 'r') as f:
+                metadata = json.load(f)
+            original_uav_path = os.path.join(scene_folder_path, metadata['uav_image_path'])
+            
+            with Image.open(original_uav_path) as uav_img_for_size:
+                target_size = uav_img_for_size.size # Get (width, height)
+
+            # Resize the BEV images to match the original UAV image dimensions
+            # Using LANCZOS for high-quality resizing
+            ground_bev_img = ground_bev_img.resize(target_size, Image.Resampling.LANCZOS)
+            overhead_bev_img = overhead_bev_img.resize(target_size, Image.Resampling.LANCZOS)
+            
+            # --- MODIFIED: End of changes ---
 
             # Save the generated BEV maps
             ground_bev_img.save(os.path.join(scene_output_dir, f"{scene_id}_ground_bev.png"))
             overhead_bev_img.save(os.path.join(scene_output_dir, f"{scene_id}_overhead_bev.png"))
 
             # Save the original UAV image and a collage of UGV images for context
-            with open(os.path.join(scene_folder_path, 'metadata.json'), 'r') as f:
-                metadata = json.load(f)
-            
-            # Copy original UAV image
-            original_uav_path = os.path.join(scene_folder_path, metadata['uav_image_path'])
+            # (Metadata was already loaded above)
             shutil.copy(original_uav_path, os.path.join(scene_output_dir, f"{scene_id}_uav_original.png"))
             
             # Create and save UGV collage
@@ -156,7 +169,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualize SnapViT feature maps.")
-    parser.add_argument('--data_root', type=str, default='vineyard_dataset', help="Path to the root of the processed dataset.")
+    parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
     parser.add_argument('--checkpoint', type=str, required=True, help="Path to the trained model checkpoint (.pth file).")
     parser.add_argument('--output_dir', type=str, default='visualisations', help="Directory to save the output images.")
     
