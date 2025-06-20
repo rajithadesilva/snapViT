@@ -15,11 +15,11 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (32, 32, 8), # Smaller grid for faster training
+    'grid_size': (20, 20, 8), # Smaller grid for faster training
     'grid_resolution': 0.5, # meters per grid cell
     'batch_size': 4, # Adjust based on your GPU memory
-    'learning_rate': 1e-4,
-    'epochs': 200,
+    'learning_rate': 1e-3,
+    'epochs': 1000,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'val_split_ratio': 0.2, # 20% of the data will be used for validation
 }

@@ -109,7 +109,7 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize UGV poses on UAV images for dataset verification.")
-    parser.add_argument('--dataset_dir', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
+    parser.add_argument('--dataset_dir', type=str, default='datasets/vineyard_dataset_10m', help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
     parser.add_argument('--output_dir', type=str, default='verification', help="Directory to save the output verification images.")
     parser.add_argument('--tile_ground_size', type=float, default=10.0, help="The width and height of the GeoTIFF tiles in meters, as used in create_dataset.py.")
     
