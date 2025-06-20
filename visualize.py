@@ -169,7 +169,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualize SnapViT feature maps.")
-    parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
+    parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset_10m', help="Path to the root of the processed dataset.")
     parser.add_argument('--checkpoint', type=str, required=True, help="Path to the trained model checkpoint (.pth file).")
     parser.add_argument('--output_dir', type=str, default='visualisations', help="Directory to save the output images.")
     

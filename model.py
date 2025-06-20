@@ -39,7 +39,7 @@ class GroundEncoder(nn.Module):
             nn.Linear(512, feature_dim)
         )
         
-        self.vertical_pool = nn.AdaptiveAvgPool1d(1)
+        self.vertical_pool = nn.AdaptiveMaxPool1d(1)
 
     def project_points(self, points_3d, poses_w2c, intrinsics):
         """

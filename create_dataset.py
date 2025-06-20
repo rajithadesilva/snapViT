@@ -10,15 +10,13 @@ from pyproj import Proj, Transformer
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
 from datetime import datetime, timezone, timedelta
-
-# Required libraries: pip install pandas pyrealsense2 scipy numpy pillow pyproj tqdm rasterio
 import pyrealsense2 as rs
 import rasterio
 from rasterio.windows import Window
 
 # --- CONFIGURATION ---
 SYNC_THRESHOLD = 1.0
-
+UAV_UGV_HEIGHT = -3
 
 def get_gps_from_exif(image_path):
     """Extracts GPS info from an image's EXIF data."""
@@ -151,11 +149,13 @@ def process_geotiff(geotiff_path, ground_size_m=3.0, output_dir="temp_drone_tile
 
 def extract_frames_from_bag(bag_file, output_folder, frame_skip):
     """
-    Extracts and saves color image frames from a Realsense .bag file.
+    Extracts and saves color image frames from a Realsense .bag file,
+    and returns the camera intrinsics.
     """
     print(f"Extracting frames from {bag_file} every {frame_skip} frames...")
     os.makedirs(output_folder, exist_ok=True)
     extracted_frames = []
+    intrinsics_matrix = None
 
     pipeline = rs.pipeline()
     config = rs.config()
@@ -164,12 +164,24 @@ def extract_frames_from_bag(bag_file, output_folder, frame_skip):
 
     try:
         profile = pipeline.start(config)
+
+        # Get intrinsics from the color stream profile
+        color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
+        intrinsics = color_stream.get_intrinsics()
+        intrinsics_matrix = [
+            [intrinsics.fx, 0, intrinsics.ppx],
+            [0, intrinsics.fy, intrinsics.ppy],
+            [0, 0, 1]
+        ]
+        print(f"Successfully extracted camera intrinsics: {intrinsics_matrix}")
+
         playback = profile.get_device().as_playback()
         playback.set_real_time(False)
 
         frame_number = 0
         while True:
-            frames = pipeline.wait_for_frames()
+            # Use a timeout to prevent waiting indefinitely at the end of the file
+            frames = pipeline.wait_for_frames(timeout_ms=1000)
 
             if frame_number % frame_skip == 0:
                 color_frame = frames.get_color_frame()
@@ -188,11 +200,14 @@ def extract_frames_from_bag(bag_file, output_folder, frame_skip):
 
             frame_number += 1
     except RuntimeError:
-        print("End of bag file reached.")
+        print("End of bag file reached or no frames were received in the timeout window.")
     finally:
         pipeline.stop()
 
-    return sorted(extracted_frames, key=lambda x: x['timestamp'])
+    if not extracted_frames:
+        print("Warning: No frames were extracted from the bag file. Check if the color stream topic exists.")
+    
+    return sorted(extracted_frames, key=lambda x: x['timestamp']), intrinsics_matrix
 
 def calculate_rotation_from_gps_window(current_gps_idx, gps_data_list, window_size=5):
     """
@@ -261,10 +276,12 @@ def process_real_data(args):
     gps_df = parse_llh_file(args.ground_llh)
     gps_data_list = gps_df.reset_index().to_dict('records')
 
-    # 3. Extract UGV frames
-    ugv_frames = extract_frames_from_bag(args.ground_rosbag, ugv_temp_folder, args.frame_skip)
+    # 3. Extract UGV frames and intrinsics
+    ugv_frames, ugv_intrinsics = extract_frames_from_bag(args.ground_rosbag, ugv_temp_folder, args.frame_skip)
     if not ugv_frames or gps_df.empty:
-        raise ValueError("Cannot process, a data source is empty.")
+        raise ValueError("Cannot process, a data source (UGV frames or GPS) is empty.")
+    if ugv_intrinsics is None:
+        raise ValueError("Could not extract camera intrinsics from the rosbag file. Please check the bag file integrity and topics.")
 
     # 4. DYNAMIC OFFSET CALCULATION
     first_bag_ts = ugv_frames[0]['timestamp']
@@ -344,7 +361,7 @@ def process_real_data(args):
             ugv_x, ugv_y = ugv_info['xy']
             local_x = ugv_x - origin_x
             local_y = ugv_y - origin_y
-            local_z = ugv_info['gps'][2] - origin_alt 
+            local_z = UAV_UGV_HEIGHT #ugv_info['gps'][2] - origin_alt 
             
             rotation_matrix = ugv_info['rotation_matrix']
             translation_vector = np.array([local_x, local_y, local_z])
@@ -356,7 +373,7 @@ def process_real_data(args):
 
             ugv_metadata.append({
                 "image_path": os.path.join('ugv_images', ugv_info['name']),
-                "camera_intrinsics": [[925.348, 0.0, 639.5],[0.0, 925.348, 359.5],[0.0, 0.0, 1.0]],
+                "camera_intrinsics": ugv_intrinsics,
                 "camera_pose_w2c": w2c_matrix
             })
 
