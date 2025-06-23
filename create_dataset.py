@@ -16,7 +16,7 @@ from rasterio.windows import Window
 
 # --- CONFIGURATION ---
 SYNC_THRESHOLD = 1.0
-UAV_UGV_HEIGHT = -3
+UGV_HEIGHT = 1.0
 
 def get_gps_from_exif(image_path):
     """Extracts GPS info from an image's EXIF data."""
@@ -287,7 +287,6 @@ def process_real_data(args):
     first_bag_ts = ugv_frames[0]['timestamp']
     first_gps_ts = gps_df.index.min()
     
-    # --- CORRECTED LOGIC ---
     # The offset is the direct difference between the first camera timestamp and the first GPS timestamp.
     # This aligns the two timelines without relying on an inaccurate, hardcoded lag value.
     total_offset = first_bag_ts - first_gps_ts
@@ -361,13 +360,13 @@ def process_real_data(args):
             ugv_x, ugv_y = ugv_info['xy']
             local_x = ugv_x - origin_x
             local_y = ugv_y - origin_y
-            local_z = UAV_UGV_HEIGHT #ugv_info['gps'][2] - origin_alt 
+            local_z = UGV_HEIGHT #ugv_info['gps'][2] - origin_alt 
             
             rotation_matrix = ugv_info['rotation_matrix']
             translation_vector = np.array([local_x, local_y, local_z])
 
             c2w_matrix = np.eye(4)
-            c2w_matrix[:3, :3] = rotation_matrix
+            #c2w_matrix[:3, :3] = rotation_matrix
             c2w_matrix[:3, 3] = translation_vector
             w2c_matrix = np.linalg.inv(c2w_matrix).tolist()
 
@@ -405,7 +404,7 @@ if __name__ == '__main__':
     parser.add_argument('--ground_llh', type=str, required=True, help="Path to the .llh file with ground vehicle GPS coordinates.")
     parser.add_argument('--output_dir', type=str, default='processed_dataset', help="Path to save the processed dataset.")
     parser.add_argument('--scene_radius', type=float, default=15.0, help="Radius in meters to group ground images under a drone image.")
-    parser.add_argument('--frame_skip', type=int, default=5, help="Process only every N-th frame from the rosbag.")
+    parser.add_argument('--frame_skip', type=int, default=15, help="Process only every N-th frame from the rosbag.")
     parser.add_argument('--tile_ground_size', type=float, default=10.0, help="The desired width and height of the GeoTIFF tiles in meters.")
 
     args = parser.parse_args()

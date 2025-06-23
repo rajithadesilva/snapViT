@@ -18,6 +18,7 @@ CONFIG = {
     'batch_size': 1,
     'device': 'cpu', # No need for GPU for this script
 }
+DRONE_HEIGHT = 11.8872
 
 def get_frustum_corners(c2w_matrix, intrinsics, img_size=(224, 224), frustum_depth=2.0):
     """Calculates the 8 corners of a camera frustum in world coordinates."""
@@ -162,9 +163,10 @@ def main(args):
             ))
 
     # --- Visualize the Aerial "Camera" ---
+    print([np.max(grid_points_flat[:, 2]) + 5])
     # For the aerial view, the origin is the center of the world. We can draw a simple marker for it.
     fig.add_trace(go.Scatter3d(
-        x=[0], y=[0], z=[np.max(grid_points_flat[:, 2]) + 5], # Position it above the grid
+        x=[0], y=[0], z=[np.float32(DRONE_HEIGHT)], # Position it above the grid
         mode='markers',
         marker=dict(size=10, color='gold', symbol='diamond'),
         name='Aerial Camera Position'
@@ -190,6 +192,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate an interactive 3D visualization of camera frustums and the point grid for a SnapViT scene.")
     parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
-    parser.add_argument('--scene_idx', type=int, default=2, help="The index of the scene to visualize.")
+    parser.add_argument('--scene_idx', type=int, default=0, help="The index of the scene to visualize.")
     args = parser.parse_args()
     main(args)
