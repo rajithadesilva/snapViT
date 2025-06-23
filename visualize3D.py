@@ -13,7 +13,7 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224',
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (32, 32, 8),
+    'grid_size': (20, 20, 8),
     'grid_resolution': 0.5,
     'batch_size': 1,
     'device': 'cpu', # No need for GPU for this script
@@ -92,11 +92,15 @@ def main(args):
     # --- Data ---
     # No transforms needed as we are not passing images to a model
     dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=None)
-    if args.scene_idx >= len(dataset):
-        raise ValueError(f"Scene index {args.scene_idx} is out of bounds. Dataset has {len(dataset)} scenes.")
 
-    print(f"Visualizing scene {args.scene_idx}...")
-    scene_data = dataset[args.scene_idx]
+    # Adjust scene index from 1-based user input to 0-based list index
+    scene_idx_0_based = args.scene_idx - 1
+
+    if not (0 <= scene_idx_0_based < len(dataset)):
+        raise ValueError(f"Scene index {args.scene_idx} is out of bounds. Please provide a value between 1 and {len(dataset)}.")
+
+    print(f"Visualizing scene {args.scene_idx} (index {scene_idx_0_based})...")
+    scene_data = dataset[scene_idx_0_based]
 
     # --- Prepare data for visualization ---
     grid_points = scene_data['ugv_data']['grid_points_3d'].numpy()
@@ -163,7 +167,6 @@ def main(args):
             ))
 
     # --- Visualize the Aerial "Camera" ---
-    print([np.max(grid_points_flat[:, 2]) + 5])
     # For the aerial view, the origin is the center of the world. We can draw a simple marker for it.
     fig.add_trace(go.Scatter3d(
         x=[0], y=[0], z=[np.float32(DRONE_HEIGHT)], # Position it above the grid
@@ -192,6 +195,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate an interactive 3D visualization of camera frustums and the point grid for a SnapViT scene.")
     parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
-    parser.add_argument('--scene_idx', type=int, default=0, help="The index of the scene to visualize.")
+    parser.add_argument('--scene_idx', type=int, default=9, help="The 1-based index of the scene to visualize.")
     args = parser.parse_args()
     main(args)

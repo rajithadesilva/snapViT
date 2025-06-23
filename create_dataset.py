@@ -364,9 +364,15 @@ def process_real_data(args):
             
             rotation_matrix = ugv_info['rotation_matrix']
             translation_vector = np.array([local_x, local_y, local_z])
+            axis_correction_matrix = np.array([
+                [0, 0, 1],
+                [0, 1, 0],
+                [-1, 0, 0]
+            ])
+            final_rotation = rotation_matrix @ axis_correction_matrix
 
             c2w_matrix = np.eye(4)
-            #c2w_matrix[:3, :3] = rotation_matrix
+            c2w_matrix[:3, :3] = final_rotation
             c2w_matrix[:3, 3] = translation_vector
             w2c_matrix = np.linalg.inv(c2w_matrix).tolist()
 
@@ -404,7 +410,7 @@ if __name__ == '__main__':
     parser.add_argument('--ground_llh', type=str, required=True, help="Path to the .llh file with ground vehicle GPS coordinates.")
     parser.add_argument('--output_dir', type=str, default='processed_dataset', help="Path to save the processed dataset.")
     parser.add_argument('--scene_radius', type=float, default=15.0, help="Radius in meters to group ground images under a drone image.")
-    parser.add_argument('--frame_skip', type=int, default=15, help="Process only every N-th frame from the rosbag.")
+    parser.add_argument('--frame_skip', type=int, default=1, help="Process only every N-th frame from the rosbag.")
     parser.add_argument('--tile_ground_size', type=float, default=10.0, help="The desired width and height of the GeoTIFF tiles in meters.")
 
     args = parser.parse_args()
