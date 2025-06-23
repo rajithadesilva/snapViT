@@ -33,7 +33,7 @@ Both encoders share a Vision Transformer (ViT) backbone for feature extraction. 
 
 ```bash
 git clone https://github.com/rajithadesilva/snapViT.git
-cd snapvit
+cd snapViT
 ```
 
 Create a virtual environment (recommended):
