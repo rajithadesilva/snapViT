@@ -15,8 +15,8 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (20, 20, 8), # Smaller grid for faster training
-    'grid_resolution': 0.5, # meters per grid cell
+    'grid_size': (50, 50, 8), # Smaller grid for faster training
+    'grid_resolution': 0.2, # meters per grid cell
     'batch_size': 4, # Adjust based on your GPU memory
     'learning_rate': 1e-3,
     'epochs': 1000,
