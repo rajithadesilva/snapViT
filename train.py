@@ -15,10 +15,10 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (50, 50, 8), # Smaller grid for faster training
-    'grid_resolution': 0.2, # meters per grid cell
+    'grid_size': (34, 34, 8), # Smaller grid for faster training
+    'grid_resolution': 0.3, # meters per grid cell
     'batch_size': 4, # Adjust based on your GPU memory
-    'learning_rate': 1e-3,
+    'learning_rate': 1e-4,
     'epochs': 1000,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'val_split_ratio': 0.2, # 20% of the data will be used for validation
@@ -52,6 +52,7 @@ def main():
     print(f"Using device: {CONFIG['device']}")
     best_val_loss = float('inf')
     output_model_path = 'models/best_model.pth'
+    final_model_path = 'models/final_model.pth'
 
     # --- Data ---
     image_transforms = transforms.Compose([
@@ -135,7 +136,7 @@ def main():
             best_val_loss = avg_val_loss
             torch.save(model.state_dict(), output_model_path)
             print(f"  -> New best model found! Saved to {output_model_path} (Val Loss: {best_val_loss:.4f})")
-
+    torch.save(model.state_dict(), final_model_path)
 
 if __name__ == '__main__':
     main()

@@ -20,8 +20,8 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224',
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (32, 32, 8),
-    'grid_resolution': 0.5,
+    'grid_size': (34, 34, 8),
+    'grid_resolution': 0.3,
     'batch_size': 1, # Process one scene at a time
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
 }
@@ -134,8 +134,6 @@ def main(args):
             # Convert feature maps to images
             ground_bev_img = feature_map_to_rgb(ground_bev)
             overhead_bev_img = feature_map_to_rgb(overhead_bev_resized)
-            
-            # --- MODIFIED: Start of changes ---
 
             # Get the size of the original UAV image for resizing
             with open(os.path.join(scene_folder_path, 'metadata.json'), 'r') as f:
@@ -149,8 +147,6 @@ def main(args):
             # Using LANCZOS for high-quality resizing
             ground_bev_img = ground_bev_img.resize(target_size, Image.Resampling.LANCZOS)
             overhead_bev_img = overhead_bev_img.resize(target_size, Image.Resampling.LANCZOS)
-            
-            # --- MODIFIED: End of changes ---
 
             # Save the generated BEV maps
             ground_bev_img.save(os.path.join(scene_output_dir, f"{scene_id}_ground_bev.png"))

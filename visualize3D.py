@@ -13,8 +13,8 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224',
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (20, 20, 8),
-    'grid_resolution': 0.5,
+    'grid_size': (34, 34, 8),
+    'grid_resolution': 0.3,
     'batch_size': 1,
     'device': 'cpu', # No need for GPU for this script
 }
@@ -195,6 +195,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate an interactive 3D visualization of camera frustums and the point grid for a SnapViT scene.")
     parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
-    parser.add_argument('--scene_idx', type=int, default=9, help="The 1-based index of the scene to visualize.")
+    parser.add_argument('--scene_idx', type=int, default=6, help="The 1-based index of the scene to visualize.")
     args = parser.parse_args()
     main(args)

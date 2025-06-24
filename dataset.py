@@ -79,7 +79,7 @@ class VineyardDataset(Dataset):
     def create_bev_grid(self, grid_size, resolution):
         X, Y, Z = grid_size
         x_coords = torch.linspace(-X * resolution / 2, X * resolution / 2, X)
-        y_coords = torch.linspace(-Y * resolution / 2, Y * resolution / 2, Y)
+        y_coords = torch.linspace(Y * resolution / 2, -Y * resolution / 2, Y)
         z_coords = torch.linspace(0, Z * resolution, Z)
         grid_y, grid_x, grid_z = torch.meshgrid(y_coords, x_coords, z_coords, indexing='ij')
         grid_points = torch.stack([grid_x, grid_y, grid_z], dim=-1)
