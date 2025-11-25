@@ -1,6 +1,8 @@
 data/*
 models/
+models*/
 datasets/*
 visualisations/*
 verification/*
-_pycache_/*
+__pycache__/
+runs/*
