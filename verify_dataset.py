@@ -53,14 +53,12 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
 
     for ugv_meta in ugv_images_metadata:
         w2c_matrix = np.array(ugv_meta['camera_pose_w2c'])
-
         # Invert the world-to-camera matrix to get camera-to-world
         try:
             c2w_matrix = np.linalg.inv(w2c_matrix)
         except np.linalg.LinAlgError:
             print(f"Warning: Could not invert pose matrix for {ugv_meta['image_path']}. Skipping.")
             continue
-
         # Extract the local position (translation) in meters
         # This is the UGV's position relative to the UAV image center
         local_x, local_y, _ = c2w_matrix[:3, 3]
@@ -72,7 +70,7 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
 
         # Extract the rotation to determine the direction of travel
         # Assume camera's Z-axis is the forward direction
-        # The first column of the rotation matrix represents the X-axis direction vector
+        # The third column of the rotation matrix gives the forward direction
         direction_vector = c2w_matrix[:3, 2]
         
         # Project direction onto the 2D plane (x, y)
