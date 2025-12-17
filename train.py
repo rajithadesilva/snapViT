@@ -6,24 +6,30 @@ from tqdm import tqdm
 import os
 import numpy as np
 
+from torch.utils.tensorboard import SummaryWriter
+
 from model import SnapViT
 from dataset import VineyardDataset
 
 # --- Configuration ---
 CONFIG = {
-    'data_root': 'datasets/vineyard_dataset',
+    'data_root': '/home/ale_navone/ws_pytorch/GAIA/snapViT/data/toy',
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
+    'train_img_size': (224, 224),
     'feature_dim': 128,
     'num_ugv_views': 8,
     'grid_size': (34, 34, 8), # Smaller grid for faster training
     'grid_resolution': 0.3, # meters per grid cell
-    'batch_size': 4, # Adjust based on your GPU memory
-    'learning_rate': 1e-4,
+    'batch_size': 8, # Adjust based on your GPU memory
+    'learning_rate': 1e-5,
     'epochs': 1000,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'val_split_ratio': 0.2, # 20% of the data will be used for validation
+    'val_split_ratio': 0.5, # 20% of the data will be used for validation
+    'use_depth': True,
+    'tile_ground_size': 10.0, # meters
 }
 
+#TODO: write a proper infoNCE loss function
 def info_nce_loss(features1, features2, temperature):
     """
     Calculates the InfoNCE loss for two sets of feature maps.
@@ -55,14 +61,21 @@ def main():
     final_model_path = 'models/final_model.pth'
 
     # --- Data ---
+
     image_transforms = transforms.Compose([
-        transforms.Resize((224, 224), antialias=True),
+        transforms.Resize(CONFIG['train_img_size'], antialias=True),
         transforms.ConvertImageDtype(torch.float),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
+    depth_transforms = transforms.Compose([
+        #transforms.Resize(CONFIG['train_img_size'], antialias=True), #TODO: try interpolation=transforms.InterpolationMode.NEAREST
+        transforms.Resize(CONFIG['train_img_size'], antialias=True), #TODO: try interpolation=transforms.InterpolationMode.NEAREST
+        transforms.ConvertImageDtype(torch.float),
+    ])
+
     # --- Dataset Splitting ---
-    full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms)
+    full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
     
     # Ensure dataset is not empty
     if len(full_dataset) == 0:
@@ -74,7 +87,7 @@ def main():
     print(f"Dataset size: {len(full_dataset)}. Splitting into {train_size} training and {val_size} validation samples.")
     
     # Use a generator for reproducible splits
-    generator = torch.Generator().manual_seed(42)
+    generator = torch.Generator()#.manual_seed()
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
 
     train_dataloader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
@@ -84,6 +97,8 @@ def main():
     # --- Model ---
     model = SnapViT(CONFIG).to(CONFIG['device'])
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG['learning_rate'])
+
+    writer = SummaryWriter(log_dir='runs')
 
     print("Starting training...")
     for epoch in range(CONFIG['epochs']):
@@ -109,6 +124,7 @@ def main():
             train_progress_bar.set_postfix({'loss': loss.item()})
 
         avg_train_loss = total_train_loss / len(train_dataloader)
+        writer.add_scalar('Loss/Train', avg_train_loss, epoch+1)
 
         # --- Validation Loop ---
         model.eval()
@@ -128,6 +144,7 @@ def main():
                 val_progress_bar.set_postfix({'loss': loss.item()})
         
         avg_val_loss = total_val_loss / len(val_dataloader)
+        writer.add_scalar('Loss/Validation', avg_val_loss, epoch+1)
 
         print(f"Epoch {epoch+1}/{CONFIG['epochs']} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
@@ -137,6 +154,7 @@ def main():
             torch.save(model.state_dict(), output_model_path)
             print(f"  -> New best model found! Saved to {output_model_path} (Val Loss: {best_val_loss:.4f})")
     torch.save(model.state_dict(), final_model_path)
+    writer.close()
 
 if __name__ == '__main__':
     main()
