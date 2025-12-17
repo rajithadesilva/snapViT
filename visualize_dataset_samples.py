@@ -66,7 +66,7 @@ def main():
 
 def visualize_data(uav_img, ugv_imgs, ugv_depths, 
                    camera_intrinsics, camera_poses_w2c, 
-                   depth_range, tile_ground_size, id, plot_colors
+                   depth_range, tile_ground_size, id, plot_colors, voxelize=True
                    ):
 
     # Convert tensors to numpy
@@ -158,6 +158,10 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         px = (Xw * pixels_per_meter) + center_x_px
         py = -(Yw * pixels_per_meter) + center_y_px
 
+        if voxelize == True:
+            px = np.round(px)
+            py = np.round(py)
+
         colors = color_image[v_f, u_f]
         elapsed_time += time.time() - start_time
 
@@ -166,7 +170,7 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
 
         # Draw point cloud as large matplotlib scatter dots
         if plot_colors:
-            plt.scatter(px, py, c=colors, s=1.5, marker='.', linewidths=2)
+            plt.scatter(px, py, c=colors, s=1.5, marker='.', linewidths=0.5)
         else:
             sc = plt.scatter(px, py, c=Zw, s=1.5, marker='.', linewidths=0, cmap='viridis', vmin=-1., vmax=2.)
 
