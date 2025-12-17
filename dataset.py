@@ -72,6 +72,8 @@ class VineyardDataset(Dataset):
             ugv_images = torch.stack([self.transforms(img) for img in ugv_images])
             if ugv_depths is not None and self.depth_transforms:
                 ugv_depths = torch.stack([self.depth_transforms(depth) for depth in ugv_depths])
+                # keep only the first channel
+                ugv_depths = ugv_depths[:, 0:1, ...]
         
         # 4. Define the 3D Grid
         grid_points_3d = self.create_bev_grid(self.config['grid_size'], self.config['grid_resolution'])
