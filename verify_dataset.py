@@ -53,14 +53,12 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
 
     for ugv_meta in ugv_images_metadata:
         w2c_matrix = np.array(ugv_meta['camera_pose_w2c'])
-        
         # Invert the world-to-camera matrix to get camera-to-world
         try:
             c2w_matrix = np.linalg.inv(w2c_matrix)
         except np.linalg.LinAlgError:
             print(f"Warning: Could not invert pose matrix for {ugv_meta['image_path']}. Skipping.")
             continue
-
         # Extract the local position (translation) in meters
         # This is the UGV's position relative to the UAV image center
         local_x, local_y, _ = c2w_matrix[:3, 3]
@@ -71,9 +69,9 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
         ugv_py = center_y_px - (local_y * pixels_per_meter)
 
         # Extract the rotation to determine the direction of travel
-        # Assume camera's X-axis is the forward direction
-        # The first column of the rotation matrix represents the X-axis direction vector
-        direction_vector = c2w_matrix[:3, 0]
+        # Assume camera's Z-axis is the forward direction
+        # The third column of the rotation matrix gives the forward direction
+        direction_vector = c2w_matrix[:3, 2]
         
         # Project direction onto the 2D plane (x, y)
         dir_x, dir_y = direction_vector[0], direction_vector[1]
@@ -92,14 +90,13 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
         
         # Calculate arrow endpoint
         end_x = ugv_px + dir_x * arrow_length_px
-        end_y = ugv_py - dir_y * arrow_length_px # Invert y for image coordinates
+        end_y = ugv_py - dir_y * arrow_length_px # Invert y for image coordinates     
 
         # Draw the arrow
         draw.line([(ugv_px, ugv_py), (end_x, end_y)], fill=arrow_color, width=15)
         
         # Draw a point at the base of the arrow
-        draw.ellipse([(ugv_px-4, ugv_py-4), (ugv_px+4, ugv_py+4)], fill="yellow", outline="black")
-
+        draw.ellipse([(ugv_px-10, ugv_py-10), (ugv_px+10, ugv_py+10)], fill="yellow", outline="black")
 
     # Save the visualized image
     scene_name = os.path.basename(scene_path)

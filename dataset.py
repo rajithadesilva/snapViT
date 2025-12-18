@@ -7,11 +7,14 @@ from torchvision.io import read_image, ImageReadMode
 from torchvision import transforms
 
 class VineyardDataset(Dataset):
-    def __init__(self, root_dir, config, transforms=None):
+    def __init__(self, root_dir, config, transforms=None, depth_transforms=None):
         self.root_dir = root_dir
         self.scene_folders = [os.path.join(root_dir, d) for d in sorted(os.listdir(root_dir)) if os.path.isdir(os.path.join(root_dir, d))]
         self.config = config
         self.transforms = transforms
+        self.depth_transforms = depth_transforms
+        self.depth_range = self.config.get('depth_range', (0.0, 5.0))
+        self.ground_tile_size = self.config.get('ground_tile_size', 10.0)
 
     def __len__(self):
         return len(self.scene_folders)
@@ -46,36 +49,70 @@ class VineyardDataset(Dataset):
             # If we have enough (or more) views, just take the number we need.
             ugv_metadata_sample = available_views[:target_num_views]
         
-        ugv_images, ugv_poses, ugv_intrinsics = [], [], []
+        ugv_images, ugv_depths, ugv_poses, ugv_intrinsics= [], [], [], []
         for view_meta in ugv_metadata_sample:
             img_path = os.path.join(scene_path, view_meta['image_path'])
+            if self.config.get('use_depth', False) and 'depth_path' in view_meta:
+                depth_path = os.path.join(scene_path, view_meta['depth_path'])
+                ugv_depths.append(read_image(depth_path, mode=ImageReadMode.RGB))
             ugv_images.append(read_image(img_path, mode=ImageReadMode.RGB))
             ugv_poses.append(torch.tensor(view_meta['camera_pose_w2c'], dtype=torch.float32))
             ugv_intrinsics.append(torch.tensor(view_meta['camera_intrinsics'], dtype=torch.float32))
             
         ugv_images = torch.stack(ugv_images)
+        ugv_depths = torch.stack(ugv_depths) if ugv_depths else None
         ugv_poses = torch.stack(ugv_poses)
         ugv_intrinsics = torch.stack(ugv_intrinsics)
+        depth_range = torch.tensor(self.depth_range, dtype=torch.float32)
+        ground_tile_size = torch.tensor(self.ground_tile_size, dtype=torch.float32)
+
+        if self.config.get('train_img_size', None) is not None:
+            ugv_h, ugv_v = ugv_images.shape[2:]
+            ugv_intrinsics = self.intrinsics_transform(ugv_intrinsics, original_size=(ugv_h, ugv_v), new_size=self.config['train_img_size'])
 
         # 3. Apply transformations
         if self.transforms:
             uav_image = self.transforms(uav_image)
             # Apply transform to each image in the stack
             ugv_images = torch.stack([self.transforms(img) for img in ugv_images])
+            if ugv_depths is not None and self.depth_transforms:
+                ugv_depths = torch.stack([self.depth_transforms(depth) for depth in ugv_depths])
+                # keep only the first channel
+                ugv_depths = ugv_depths[:, 0:1, ...]
         
         # 4. Define the 3D Grid
         grid_points_3d = self.create_bev_grid(self.config['grid_size'], self.config['grid_resolution'])
 
+
+        
         return {
             'uav_data': {'uav_image': uav_image},
             'ugv_data': {
                 'ugv_images': ugv_images,
+                'ugv_depths': ugv_depths,
                 'camera_poses': ugv_poses,
                 'intrinsics': ugv_intrinsics,
+                'depth_range': depth_range,
+                'ground_tile_size': ground_tile_size,
                 'grid_points_3d': grid_points_3d
             }
         }
+    
 
+    def intrinsics_transform(self, intrinsics, original_size, new_size):
+        """
+        Adjusts camera intrinsics based on image resizing.
+        """
+        if new_size is None:
+            return intrinsics
+        scale_x = new_size[1] / original_size[1]
+        scale_y = new_size[0] / original_size[0]
+        intrinsics[:, 0, 0] *= scale_x  # fx
+        intrinsics[:, 1, 1] *= scale_y  # fy
+        intrinsics[:, 0, 2] *= scale_x  # cx
+        intrinsics[:, 1, 2] *= scale_y  # cy
+        return intrinsics
+    
     def create_bev_grid(self, grid_size, resolution):
         X, Y, Z = grid_size
         x_coords = torch.linspace(-X * resolution / 2, X * resolution / 2, X)

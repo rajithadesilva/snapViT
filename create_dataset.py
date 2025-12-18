@@ -147,26 +147,37 @@ def process_geotiff(geotiff_path, ground_size_m=3.0, output_dir="temp_drone_tile
 
     return drone_data, drone_crs
 
-def extract_frames_from_bag(bag_file, output_folder, frame_skip):
+def extract_frames_from_bag(bag_file, output_folder, depth_output_folder, frame_skip):
     """
     Extracts and saves color image frames from a Realsense .bag file,
     and returns the camera intrinsics.
     """
     print(f"Extracting frames from {bag_file} every {frame_skip} frames...")
     os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(depth_output_folder, exist_ok=True)
     extracted_frames = []
+    extracted_depths = []
     intrinsics_matrix = None
+    depth_intrinsics_matrix = None
 
     pipeline = rs.pipeline()
     config = rs.config()
     rs.config.enable_device_from_file(config, bag_file, repeat_playback=False)
     config.enable_stream(rs.stream.color)
+    config.enable_stream(rs.stream.depth)
+
+    # Create alignement object to align depth to color
+    align_to = rs.stream.color
+    align = rs.align(align_to)
+
+    print("Starting Realsense pipeline...")
 
     try:
         profile = pipeline.start(config)
 
         # Get intrinsics from the color stream profile
         color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
+        #depth_stream = profile.get_stream(rs.stream.depth).as_video_stream_profile()
         intrinsics = color_stream.get_intrinsics()
         intrinsics_matrix = [
             [intrinsics.fx, 0, intrinsics.ppx],
@@ -182,11 +193,14 @@ def extract_frames_from_bag(bag_file, output_folder, frame_skip):
         while True:
             # Use a timeout to prevent waiting indefinitely at the end of the file
             frames = pipeline.wait_for_frames(timeout_ms=1000)
+            frames = align.process(frames)
 
             if frame_number % frame_skip == 0:
                 color_frame = frames.get_color_frame()
-                if color_frame:
-                    timestamp = color_frame.get_timestamp() / 1000.0
+                depth_frame = frames.get_depth_frame()
+                
+                if color_frame and depth_frame:
+                    timestamp = color_frame.get_timestamp() / 1000.0 # Assume a unique timestamp even if they could be some 10ms apart
 
                     timestamp_str = f"{timestamp:.4f}".replace('.', '_')
                     image_name = f"frame_{timestamp_str}.png"
@@ -198,10 +212,19 @@ def extract_frames_from_bag(bag_file, output_folder, frame_skip):
 
                     extracted_frames.append({'timestamp': timestamp, 'name': image_name})
 
+                    depth_image_name = f"frame_{timestamp_str}.png"
+                    depth_image_path = os.path.join(depth_output_folder, depth_image_name)
+                    
+                    depth_data = np.asanyarray(depth_frame.get_data())
+                    depth_img = Image.fromarray(depth_data)
+                    depth_img.save(depth_image_path)
+                    extracted_depths.append({'timestamp': timestamp, 'name': depth_image_name})
+
             frame_number += 1
     except RuntimeError:
         print("End of bag file reached or no frames were received in the timeout window.")
     finally:
+        print("Stopping Realsense pipeline...")
         pipeline.stop()
 
     if not extracted_frames:
@@ -243,6 +266,7 @@ def process_real_data(args):
     print("Starting data preprocessing...")
     os.makedirs(args.output_dir, exist_ok=True)
     ugv_temp_folder = os.path.join(args.output_dir, "temp_ugv_extracted_images")
+    ugv_depth_temp_folder = os.path.join(args.output_dir, "temp_ugv_extracted_depths")
     drone_temp_folder = os.path.join(args.output_dir, "temp_drone_tiles")
 
     # 1. DRONE DATA LOADING
@@ -277,15 +301,17 @@ def process_real_data(args):
     gps_data_list = gps_df.reset_index().to_dict('records')
 
     # 3. Extract UGV frames and intrinsics
-    ugv_frames, ugv_intrinsics = extract_frames_from_bag(args.ground_rosbag, ugv_temp_folder, args.frame_skip)
+    ugv_frames, ugv_intrinsics = extract_frames_from_bag(args.ground_rosbag, ugv_temp_folder, ugv_depth_temp_folder, args.frame_skip)
     if not ugv_frames or gps_df.empty:
         raise ValueError("Cannot process, a data source (UGV frames or GPS) is empty.")
     if ugv_intrinsics is None:
         raise ValueError("Could not extract camera intrinsics from the rosbag file. Please check the bag file integrity and topics.")
 
     # 4. DYNAMIC OFFSET CALCULATION
+    #TODO: check if this corresponds to the leap second adjustment date
     first_bag_ts = ugv_frames[0]['timestamp']
     first_gps_ts = gps_df.index.min()
+    print(f"Time offset between first UGV frame and first GPS point: {first_bag_ts - first_gps_ts:.4f} seconds")
     
     # The offset is the direct difference between the first camera timestamp and the first GPS timestamp.
     # This aligns the two timelines without relying on an inaccurate, hardcoded lag value.
@@ -340,8 +366,10 @@ def process_real_data(args):
         scene_id = f'scene_{scene_count:04d}'
         scene_path = os.path.join(args.output_dir, scene_id)
         ugv_out_path = os.path.join(scene_path, 'ugv_images')
+        ugv_depth_out_path = os.path.join(scene_path, 'ugv_depths')
         uav_out_path = os.path.join(scene_path, 'uav_image')
         os.makedirs(ugv_out_path, exist_ok=True)
+        os.makedirs(ugv_depth_out_path, exist_ok=True)
         os.makedirs(uav_out_path, exist_ok=True)
 
         drone_info = drone_data[drone_idx]
@@ -357,11 +385,15 @@ def process_real_data(args):
             if not os.path.exists(ugv_src_path): continue
             shutil.copy(ugv_src_path, os.path.join(ugv_out_path, ugv_info['name']))
 
+            ugv_depth_src_path = os.path.join(ugv_depth_temp_folder, ugv_info['name'])
+            if not os.path.exists(ugv_depth_src_path): continue
+            shutil.copy(ugv_depth_src_path, os.path.join(ugv_depth_out_path, ugv_info['name']))
+
             ugv_x, ugv_y = ugv_info['xy']
             local_x = ugv_x - origin_x
             local_y = ugv_y - origin_y
             local_z = UGV_HEIGHT #ugv_info['gps'][2] - origin_alt 
-            
+
             rotation_matrix = ugv_info['rotation_matrix']
             translation_vector = np.array([local_x, local_y, local_z])
             axis_correction_matrix = np.array([
@@ -378,6 +410,7 @@ def process_real_data(args):
 
             ugv_metadata.append({
                 "image_path": os.path.join('ugv_images', ugv_info['name']),
+                "depth_path": os.path.join('ugv_depths', ugv_info['name']),
                 "camera_intrinsics": ugv_intrinsics,
                 "camera_pose_w2c": w2c_matrix
             })
@@ -394,6 +427,9 @@ def process_real_data(args):
     if os.path.exists(ugv_temp_folder):
         print(f"Cleaning up temporary directory: {ugv_temp_folder}")
         shutil.rmtree(ugv_temp_folder)
+    if os.path.exists(ugv_depth_temp_folder):
+        print(f"Cleaning up temporary depth directory: {ugv_depth_temp_folder}")
+        shutil.rmtree(ugv_depth_temp_folder)
     if args.drone_geotiff and os.path.exists(drone_temp_folder):
         print(f"Cleaning up temporary drone tile directory: {drone_temp_folder}")
         shutil.rmtree(drone_temp_folder)
