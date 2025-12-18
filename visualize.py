@@ -20,8 +20,8 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224',
     'feature_dim': 128,
     'num_ugv_views': 8,
-    'grid_size': (34, 34, 8),
-    'grid_resolution': 0.3,
+    'grid_size': (25, 50, 8),
+    'grid_resolution': 0.2,
     'batch_size': 1, # Process one scene at a time
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
 }
@@ -165,7 +165,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Visualize SnapViT feature maps.")
-    parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
+    parser.add_argument('--data_root', type=str, default='datasets/row_wise_dataset2', help="Path to the root of the processed dataset.")
     parser.add_argument('--checkpoint', type=str, required=True, help="Path to the trained model checkpoint (.pth file).")
     parser.add_argument('--output_dir', type=str, default='visualisations', help="Directory to save the output images.")
     

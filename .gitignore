@@ -4,5 +4,4 @@ models*/
 datasets/*
 visualisations/*
 verification/*
-__pycache__/
-runs/*
+__pycache__/*
