@@ -5,3 +5,4 @@ datasets/*
 visualisations/*
 verification/*
 __pycache__/*
+similarity_scores.csv
