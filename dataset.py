@@ -13,6 +13,9 @@ class VineyardDataset(Dataset):
         self.config = config
         self.transforms = transforms
         self.depth_transforms = depth_transforms
+        self.depth_range = self.config.get('depth_range', (0.0, 5.0))
+        self.ground_tile_size = self.config.get('ground_tile_size', 10.0)
+
     def __len__(self):
         return len(self.scene_folders)
 
@@ -46,7 +49,7 @@ class VineyardDataset(Dataset):
             # If we have enough (or more) views, just take the number we need.
             ugv_metadata_sample = available_views[:target_num_views]
         
-        ugv_images, ugv_depths, ugv_poses, ugv_intrinsics = [], [], [], []
+        ugv_images, ugv_depths, ugv_poses, ugv_intrinsics= [], [], [], []
         for view_meta in ugv_metadata_sample:
             img_path = os.path.join(scene_path, view_meta['image_path'])
             if self.config.get('use_depth', False) and 'depth_path' in view_meta:
@@ -60,6 +63,8 @@ class VineyardDataset(Dataset):
         ugv_depths = torch.stack(ugv_depths) if ugv_depths else None
         ugv_poses = torch.stack(ugv_poses)
         ugv_intrinsics = torch.stack(ugv_intrinsics)
+        depth_range = torch.tensor(self.depth_range, dtype=torch.float32)
+        ground_tile_size = torch.tensor(self.ground_tile_size, dtype=torch.float32)
 
         if self.config.get('train_img_size', None) is not None:
             ugv_h, ugv_v = ugv_images.shape[2:]
@@ -78,6 +83,7 @@ class VineyardDataset(Dataset):
         # 4. Define the 3D Grid
         grid_points_3d = self.create_bev_grid(self.config['grid_size'], self.config['grid_resolution'])
 
+
         
         return {
             'uav_data': {'uav_image': uav_image},
@@ -86,6 +92,8 @@ class VineyardDataset(Dataset):
                 'ugv_depths': ugv_depths,
                 'camera_poses': ugv_poses,
                 'intrinsics': ugv_intrinsics,
+                'depth_range': depth_range,
+                'ground_tile_size': ground_tile_size,
                 'grid_points_3d': grid_points_3d
             }
         }

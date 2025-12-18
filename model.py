@@ -154,11 +154,10 @@ class GroundEncoder(nn.Module):
 
         self.projection_layer = nn.Conv2d(vit_embed_dim, feature_dim, kernel_size=1)
 
-    def forward(self, ugv_images, ugv_depths, camera_poses, intrinsics, grid_points_3d):
-        #TODO: add the function arguments
+    def forward(self, ugv_images, ugv_depths, camera_poses, intrinsics, depth_range, ground_tile_size, grid_points_3d):
+        #ground_tile_size = ground_tile_size[0].item()
+        ground_tile_size = 10.
         w2c_matrices=camera_poses
-        depth_range=(0.0, 5.0) 
-        ground_tile_size=10.0
         B, N_views, C_img, H_img, W_img = ugv_images.shape
         # Extract 2D features for all views
 
@@ -170,7 +169,7 @@ class GroundEncoder(nn.Module):
         # Swap the first and second rows for all world-to-camera matrices
         #TODO remove after correction of dataset generation
         w2c_matrices = w2c_matrices.clone()
-        w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
+        #w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
 
         # Interpolate depth maps to feature map size
         ugv_depths = F.interpolate(
@@ -180,6 +179,9 @@ class GroundEncoder(nn.Module):
                     align_corners=False
                 ).view(B, N_views, H_feat, W_feat)
         ugv_depths = ugv_depths*65535.0 / 1000.0  # Scale back to meters due to normalization during loading
+
+        #convert it to monodimensional array
+        depth_range = depth_range.to(ugv_depths.device).view(-1)
 
         # Compute camera-to-world (c2w) matrices by inverting w2c
         c2w_matrices = torch.linalg.inv(w2c_matrices)
@@ -388,11 +390,11 @@ class GroundEncoder(nn.Module):
         
         # Optionally, further process BEV features with an MLP or conv layers
         bev_features_flat = bev_features.view(B, C_feat, -1).permute(0, 2, 1)  # (B, H_feat*W_feat, C_feat)
-        #bev_features_flat = self.fusion_mlp(bev_features_flat)                # (B, H_feat*W_feat, feature_dim)
-        #bev_features = bev_features_flat.permute(0, 2, 1).view(B, -1,  H_feat, W_feat)  # (B, feature_dim, H_feat, W_feat)
+        bev_features_flat = self.fusion_mlp(bev_features_flat)                # (B, H_feat*W_feat, feature_dim)
+        bev_features = bev_features_flat.permute(0, 2, 1).view(B, -1,  H_feat, W_feat)  # (B, feature_dim, H_feat, W_feat)
 
         # use projection layer instead of MLP
-        bev_features = self.projection_layer(bev_features_flat.permute(0, 2, 1).view(B, C_feat, H_feat, W_feat))
+        #bev_features = self.projection_layer(bev_features_flat.permute(0, 2, 1).view(B, C_feat, H_feat, W_feat))
 
         return bev_features
 
