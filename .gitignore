@@ -7,4 +7,4 @@ verification/*
 dataset_samples_visualizations/*
 __pycache__/
 runs/*
-visualisations/*
+visualizations/*
