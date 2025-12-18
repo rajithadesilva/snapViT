@@ -24,6 +24,9 @@ CONFIG = {
     'grid_resolution': 0.3,
     'batch_size': 1, # Process one scene at a time
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'use_depth': True,
+    'depth_range': (0.0, 5.0), # meters
+    'ground_tile_size': 10.0, # meters
 }
 
 def feature_map_to_rgb(feature_map: torch.Tensor) -> Image.Image:
@@ -98,8 +101,13 @@ def main(args):
         transforms.ConvertImageDtype(torch.float),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
+
+    depth_transforms = transforms.Compose([
+        transforms.Resize((224, 224), antialias=True),
+        transforms.ConvertImageDtype(torch.float),
+    ])
     
-    dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=image_transforms)
+    dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
     dataloader = DataLoader(dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=4)
     
     # --- Model ---
