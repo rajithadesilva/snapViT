@@ -14,10 +14,12 @@ import json
 # Import necessary classes from your project files
 from model import SnapViT
 from dataset import VineyardDataset
+from visualize_dataset_samples import visualize_data
 
 # --- Configuration (should match training script) ---
 CONFIG = {
     'vit_model': 'vit_small_patch16_224',
+    'train_img_size': (224, 224),
     'feature_dim': 128,
     'num_ugv_views': 8,
     'grid_size': (34, 34, 8),
@@ -97,13 +99,13 @@ def main(args):
 
     # --- Data ---
     image_transforms = transforms.Compose([
-        transforms.Resize((224, 224), antialias=True),
+        transforms.Resize(CONFIG['train_img_size'], antialias=True),
         transforms.ConvertImageDtype(torch.float),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     depth_transforms = transforms.Compose([
-        transforms.Resize((224, 224), antialias=True),
+        transforms.Resize(CONFIG['train_img_size'], antialias=True),
         transforms.ConvertImageDtype(torch.float),
     ])
     
@@ -132,6 +134,42 @@ def main(args):
             # Move data to device
             uav_data = {k: v.to(CONFIG['device']) for k, v in batch['uav_data'].items()}
             ugv_data = {k: v.to(CONFIG['device']) for k, v in batch['ugv_data'].items()}
+
+            # Get normalized tensors
+            uav_img_tensor = uav_data['uav_image'][0]
+            ugv_imgs_tensor = ugv_data['ugv_images'][0]
+
+            # Denormalize (inverse of Normalize(mean, std)) and convert to PIL
+            def denormalize(tensor):
+                # tensor: (3, H, W)
+                mean = torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype, device=tensor.device).view(3,1,1)
+                std  = torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype, device=tensor.device).view(3,1,1)
+                tensor = tensor * std + mean
+                tensor = torch.clamp(tensor, 0.0, 1.0)
+                #tensor = (tensor * 255).byte().cpu()
+                return tensor
+
+            
+            uav_img = denormalize(uav_img_tensor)
+            ugv_imgs = torch.stack([denormalize(ugv_imgs_tensor[j]) for j in range(ugv_imgs_tensor.shape[0])])
+            ugv_depths = ugv_data['ugv_depths'][0]
+            camera_intrinsics = ugv_data['intrinsics'][0]
+            camera_poses_w2c = ugv_data['camera_poses'][0]
+            depth_range = (CONFIG['depth_range'][0], CONFIG['depth_range'][1])
+            tile_ground_size = CONFIG['ground_tile_size']
+
+            visualize_data(uav_img=uav_img,
+                           ugv_imgs=ugv_imgs, 
+                           ugv_depths=ugv_depths, 
+                           camera_poses_w2c=camera_poses_w2c, 
+                           camera_intrinsics=camera_intrinsics, 
+                           depth_range=depth_range, 
+                           tile_ground_size=tile_ground_size, 
+                           id=i, 
+                           plot_colors=True, 
+                           voxelize=True, 
+                           scene_output_dir=scene_output_dir  
+                           )
 
             # Forward pass
             ground_bev, overhead_bev = model(ugv_data, uav_data)
