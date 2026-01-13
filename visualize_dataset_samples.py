@@ -8,24 +8,20 @@ import matplotlib.pyplot as plt
 
 from dataset import VineyardDataset
 from matplotlib.patches import Circle, FancyArrow
-import time
 # --- Configuration ---
 CONFIG = {
-    'data_root': 'data/row_1_to_6', # Path to the dataset root directory
-    'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
-    'feature_dim': 128,
+    'data_root': 'data/new', # Path to the dataset root directory
     'train_img_size': (224, 224),  # Use None to avoid resizing in this script
     'num_ugv_views': 16,
-    'grid_size': (34, 34, 8), # Smaller grid for faster training
-    'grid_resolution': 0.3, # meters per grid cell
+    'grid_size': (34, 34, 8), # parameter to be removed later
+    'grid_resolution': 0.3, # meters per grid cell to be removed later
     'batch_size': 1, # Adjust based on your GPU memory
-    'learning_rate': 1e-4,
-    'epochs': 1000,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'val_split_ratio': 0.2, # 20% of the data will be used for validation
     'use_depth': True,
     'tile_ground_size': 10.0, # meters
     'depth_range': (0.0, 5.0), # meters
+    'voxelize': False,
+    'plot_colors': True,
 }
 
 def main():
@@ -42,7 +38,8 @@ def main():
     ])
     # Create dataset and dataloader
 
-    plot_colors = True
+    plot_colors = CONFIG['plot_colors']
+    voxelize = CONFIG['voxelize']
 
     full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
 
@@ -62,11 +59,21 @@ def main():
         camera_intrinsics = data['ugv_data']['intrinsics'][0]
         camera_poses_w2c = data['ugv_data']['camera_poses'][0]
         
-        visualize_data(uav_img, ugv_imgs, ugv_depths, camera_intrinsics, camera_poses_w2c, depth_range=CONFIG['depth_range'], tile_ground_size=tile_ground_size, id=i, plot_colors=plot_colors)
+        visualize_data(uav_img,
+                        ugv_imgs,
+                        ugv_depths,
+                        camera_intrinsics,
+                        camera_poses_w2c, 
+                        depth_range=CONFIG['depth_range'], 
+                        tile_ground_size=tile_ground_size, 
+                        id=i, 
+                        plot_colors=plot_colors,
+                        voxelize=voxelize
+                        )
 
 def visualize_data(uav_img, ugv_imgs, ugv_depths, 
                    camera_intrinsics, camera_poses_w2c, 
-                   depth_range, tile_ground_size, id, plot_colors, voxelize=True
+                   depth_range, tile_ground_size, id, plot_colors, voxelize=True, scene_output_dir="."
                    ):
 
     # Convert tensors to numpy
@@ -87,18 +94,15 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         matrix[[0, 1]] = matrix[[1, 0]]
         return matrix
     
-    elapsed_time = 0.0
 
 
     # Plot UAV image in background with alpha
     fig, ax = plt.subplots(figsize=(10, 10))
     ax.imshow(uav_img_np, alpha=0.25)
-
     arrows = []
 
     # Main loop over UGV images
     for i in range(len(ugv_imgs)):
-        start_time = time.time()
         w2c_matrix = camera_poses_w2c[i]
         w2c_matrix = swipe_xy_axis(w2c_matrix)
 
@@ -115,7 +119,7 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         if depth.shape[0] == 3:
             depth = depth[0]
         else:
-            depth = depth
+            depth = depth.squeeze()
 
         depth = depth*65535.0/1000  # assuming depth was normalized to [0,1] on uint16 range during loading
 
@@ -163,20 +167,16 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
             py = np.round(py)
 
         colors = color_image[v_f, u_f]
-        elapsed_time += time.time() - start_time
 
         # Filter inside bounds
         #inside = (pxs >= 0) & (pxs < img_width) & (pys >= 0) & (pys < img_height)
 
         # Draw point cloud as large matplotlib scatter dots
         if plot_colors:
-            plt.scatter(px, py, c=colors, s=1.5, marker='.', linewidths=0.5)
+            plt.scatter(px, py, c=colors, s=1.5, marker='.', linewidths=2.)
         else:
             sc = plt.scatter(px, py, c=Zw, s=1.5, marker='.', linewidths=0, cmap='viridis', vmin=-1., vmax=2.)
 
-
-
-        start_time = time.time()
         # Extract UGV position (x,y)
         local_x, local_y, _ = c2w_matrix[:3, 3]
 
@@ -198,8 +198,6 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         arrow_length = 0.02*img_width  # 2% of image width
         end_x = ugv_px + dx * arrow_length
         end_y = ugv_py - dy * arrow_length
-
-        elapsed_time += time.time() - start_time
         arrows.append([ugv_px, ugv_py, end_x, end_y])
 
     # Draw UGV positions
@@ -217,9 +215,7 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
     
     if not plot_colors: 
         plt.colorbar(sc, ax=ax, label='Height (m)')
-    print(f"Time for elaboration of sample {id}: {elapsed_time:.4f} seconds")
 
-    start_time_visual = time.time()
     ax.set_title("UAV Image with UGV Positions + Points")
     ax.set_xlim(0, img_width)
     ax.set_ylim(img_height, 0)  # invert Y axis so it matches image coordinates
@@ -227,16 +223,13 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
     plt.tight_layout()
 
     # Save the figure to an outputs directory with a timestamped filename
-    out_dir = "dataset_samples_visualizations"
+    out_dir = scene_output_dir if scene_output_dir else "outputs"
     os.makedirs(out_dir, exist_ok=True)
-    fname = f"uav_ugv_vis_{id}.png"
+    fname = f"scene_{id+1:04d}_rgb_proj.png"
     save_path = os.path.join(out_dir, fname)
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close(fig)
-    print(f"Saved visualization to: {save_path}")
-    end_time_visual = time.time()
-    print(f"Time for visualization saving of sample {id}: {end_time_visual - start_time_visual:.4f} seconds")
-
+    #print(f"Saved visualization to: {save_path}")
 
 if __name__ == "__main__":
     main()
