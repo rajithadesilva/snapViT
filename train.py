@@ -13,7 +13,7 @@ from dataset import VineyardDataset
 
 # --- Configuration ---
 CONFIG = {
-    'data_root': '/home/ale_navone/ws_pytorch/GAIA/snapViT/data/new',
+    'data_root': '/home/ale_navone/ws_pytorch/GAIA/snapViT/data/double',
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'train_img_size': (224, 224),
     'feature_dim': 128,
@@ -24,7 +24,7 @@ CONFIG = {
     'learning_rate': 1e-4,
     'epochs': 1000,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'val_split_ratio': 0.75, # 20% of the data will be used for validation
+    'val_split_ratio': 0.5, # 20% of the data will be used for validation
     'use_depth': True,
     'depth_range': (0.0, 5.0), # meters
     'ground_tile_size': 10.0, # meters
@@ -91,6 +91,13 @@ def main():
     # Use a generator for reproducible splits
     generator = torch.Generator()#.manual_seed()
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
+
+    # Deterministic split: first half -> train, second half -> val #TODO to remove
+    #train_indices = list(range(0, train_size))
+    #val_indices = list(range(train_size, len(full_dataset)))
+
+    #train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
+    #val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
 
     train_dataloader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
     val_dataloader = DataLoader(val_dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=4)
