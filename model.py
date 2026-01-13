@@ -169,7 +169,7 @@ class GroundEncoder(nn.Module):
         # Swap the first and second rows for all world-to-camera matrices
         #TODO remove after correction of dataset generation
         w2c_matrices = w2c_matrices.clone()
-        #w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
+        w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
 
         # Interpolate depth maps to feature map size
         ugv_depths = F.interpolate(
@@ -210,12 +210,16 @@ class GroundEncoder(nn.Module):
         intrinsics_scaled[:, :, 0, 2] = cx * scale_x    # cx'
         intrinsics_scaled[:, :, 1, 2] = cy * scale_y    # cy'
 
+        fx = intrinsics_scaled[:, :, 0, 0]
+        fy = intrinsics_scaled[:, :, 1, 1]
+        cx = intrinsics_scaled[:, :, 0, 2]
+        cy = intrinsics_scaled[:, :, 1, 2]
+
         # If the ViT operates on patch centers, optionally divide by patch_size
         # (uncomment if your projection should be in patch-space rather than resized image pixels)
         #intrinsics_scaled[:, :, :2, :] = intrinsics_scaled[:, :, :2, :] / float(patch_size)
 
         # Use the corrected intrinsics for projection
-        intrinsics = intrinsics_scaled
 
         # Ensure variable name expected later
         camera_poses = w2c_matrices
@@ -289,7 +293,7 @@ class GroundEncoder(nn.Module):
         # prepare source features as (B, V, P, C_feat)
         src_feats = img_features_2d.view(B, N_views, C_feat, -1).permute(0, 1, 3, 2)
 
-        aggregation_method = 'avgmax'  # ' avg' or 'max'
+        aggregation_method = 'avg'  # ' avg' or 'max'
         if aggregation_method == 'avg':
 
             # Splat views jointly per batch (vectorized over views)
@@ -337,7 +341,7 @@ class GroundEncoder(nn.Module):
                 feats = src_feats[b].reshape(-1, C_feat)[valid]     # (N_valid, C)
                 lin_idx = voxel_lin_idx[b].reshape(-1)[valid]       # (N_valid,)
 
-                bev_max[b].scatter_reduce_(
+                bev_max[b] = bev_max[b].scatter_reduce_( #FIXME: this shit doesn't work due to backpropagation issues
                     dim=1,
                     index=lin_idx.unsqueeze(0).expand(C_feat, -1),
                     src=feats.t(),
@@ -350,7 +354,7 @@ class GroundEncoder(nn.Module):
         elif aggregation_method == "avgmax":
             bev_sum = torch.zeros(B, C_feat, H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
             bev_count = torch.zeros(B, 1, H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
-            bev_max = torch.full(
+            bev_max = torch.full(   #FIXME: this shit doesn't work due to backpropagation issues
                 (B, C_feat, H_feat * W_feat),
                 0.,
                 device=device,
