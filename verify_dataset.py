@@ -3,6 +3,7 @@ import json
 import argparse
 import numpy as np
 from PIL import Image, ImageDraw
+import random
 
 def visualize_scene(scene_path, output_dir, tile_ground_size):
     """
@@ -106,9 +107,10 @@ def visualize_scene(scene_path, output_dir, tile_ground_size):
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize UGV poses on UAV images for dataset verification.")
-    parser.add_argument('--dataset_dir', type=str, default='datasets/old/vineyard_dataset_10m', help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
-    parser.add_argument('--output_dir', type=str, default='verification', help="Directory to save the output verification images.")
+    parser.add_argument('--dataset_dir', type=str, default='/media/hdd/ale_navone/GAIA/datasets/dataset_5k', help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
+    parser.add_argument('--output_dir', type=str, default='visualizations/verification', help="Directory to save the output verification images.")
     parser.add_argument('--tile_ground_size', type=float, default=10.0, help="The width and height of the GeoTIFF tiles in meters, as used in create_dataset.py.")
+    parser.add_argument('--num_samples', type=int, default=10, help="Number of scenes to verify. If None, verifies all scenes.")
     
     args = parser.parse_args()
 
@@ -120,11 +122,13 @@ def main():
     print(f"Starting verification. Output will be saved to '{args.output_dir}'")
 
     # Find all scene directories
-    for scene_name in sorted(os.listdir(args.dataset_dir)):
-        scene_path = os.path.join(args.dataset_dir, scene_name)
-        if os.path.isdir(scene_path) and scene_name.startswith('scene_'):
-            visualize_scene(scene_path, args.output_dir, args.tile_ground_size)
+    scene_dirs = [d for d in sorted(os.listdir(args.dataset_dir)) if os.path.isdir(os.path.join(args.dataset_dir, d)) and d.startswith('scene_')]
+    if args.num_samples is not None and args.num_samples > 0:
+        scene_dirs = random.sample(scene_dirs, min(args.num_samples, len(scene_dirs)))
 
+    for scene_name in scene_dirs:
+        scene_path = os.path.join(args.dataset_dir, scene_name)
+        visualize_scene(scene_path, args.output_dir, args.tile_ground_size)
     print("\nVerification process complete.")
 
 if __name__ == '__main__':
