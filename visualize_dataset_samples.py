@@ -1,18 +1,19 @@
+import argparse
 import torch
+import os
+import numpy as np
 from torchvision import transforms
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import os
-import numpy as np
 import matplotlib.pyplot as plt
 
 from dataset import VineyardDataset
 from matplotlib.patches import Circle, FancyArrow
 # --- Configuration ---
 CONFIG = {
-    'data_root': 'data/new', # Path to the dataset root directory
+    'data_root': '/media/hdd/ale_navone/GAIA/datasets/dataset_5k', # Path to the dataset root directory
     'train_img_size': (224, 224),  # Use None to avoid resizing in this script
-    'num_ugv_views': 16,
+    'num_ugv_views': 8,
     'grid_size': (34, 34, 8), # parameter to be removed later
     'grid_resolution': 0.3, # meters per grid cell to be removed later
     'batch_size': 1, # Adjust based on your GPU memory
@@ -22,9 +23,15 @@ CONFIG = {
     'depth_range': (0.0, 5.0), # meters
     'voxelize': False,
     'plot_colors': True,
+    'scene_output_dir': 'visualizations/dataset_samples_visualizations',  # Directory to save visualizations
+    'num_samples': 10, # Number of samples to visualize
 }
 
 def main():
+    parser = argparse.ArgumentParser(description="Visualize dataset samples using UAV and UGV images.")
+    parser.add_argument('--data_root', type=str, default=CONFIG['data_root'], help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
+    parser.add_argument('--scene_output_dir', type=str, default=CONFIG['scene_output_dir'], help="Directory to save the output visualizations.")
+    parser.add_argument('--num_samples', type=int, default=CONFIG['num_samples'], help="Number of samples to visualize.")
     print(f"Using device: {CONFIG['device']}")
     
     # --- Data ---
@@ -40,6 +47,7 @@ def main():
 
     plot_colors = CONFIG['plot_colors']
     voxelize = CONFIG['voxelize']
+    output_dir = CONFIG['scene_output_dir']
 
     full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
 
@@ -51,7 +59,13 @@ def main():
     dataloader = DataLoader(full_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
 
     # Visualize a few samples
-    for i, data in enumerate(dataloader):
+    for i in range(CONFIG['num_samples']):
+        print(f"Visualizing sample {i}")
+        try:
+            data = next(iter(dataloader))
+        except StopIteration:
+            print("No more data available in the dataloader.")
+
         data = {k: {kk: vv.to(CONFIG['device']) for kk, vv in v.items()} for k, v in data.items()}
         uav_img = data['uav_data']['uav_image'][0]
         ugv_imgs = data['ugv_data']['ugv_images'][0]
@@ -68,7 +82,8 @@ def main():
                         tile_ground_size=tile_ground_size, 
                         id=i, 
                         plot_colors=plot_colors,
-                        voxelize=voxelize
+                        voxelize=voxelize,
+                        scene_output_dir=output_dir
                         )
 
 def visualize_data(uav_img, ugv_imgs, ugv_depths, 
@@ -225,11 +240,11 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
     # Save the figure to an outputs directory with a timestamped filename
     out_dir = scene_output_dir if scene_output_dir else "outputs"
     os.makedirs(out_dir, exist_ok=True)
-    fname = f"scene_{id+1:04d}_rgb_proj.png"
+    fname = f"sample_{id:04d}_rgb_proj.png"
     save_path = os.path.join(out_dir, fname)
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close(fig)
-    #print(f"Saved visualization to: {save_path}")
+    print(f"Saved visualization to: {save_path}")
 
 if __name__ == "__main__":
     main()
