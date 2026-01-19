@@ -400,7 +400,9 @@ class GroundEncoder(nn.Module):
         # use projection layer instead of MLP
         #bev_features = self.projection_layer(bev_features_flat.permute(0, 2, 1).view(B, C_feat, H_feat, W_feat))
 
-        return bev_features
+        validity_mask = count > 0
+
+        return bev_features, validity_mask
 
 
 class OverheadEncoder(nn.Module):
@@ -429,7 +431,6 @@ class SnapViT(nn.Module):
         self.temperature = nn.Parameter(torch.ones([]) * 0.07)
 
     def forward(self, ugv_data, uav_data):
-        ground_bev = self.ground_encoder(**ugv_data)
+        ground_bev, ground_validity = self.ground_encoder(**ugv_data)
         overhead_bev = self.overhead_encoder(**uav_data)
-        return ground_bev, overhead_bev
-
+        return ground_bev, overhead_bev, ground_validity
