@@ -6,12 +6,13 @@ from torchvision import transforms
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation as R
 
 from dataset import VineyardDataset
 from matplotlib.patches import Circle, FancyArrow
 # --- Configuration ---
 CONFIG = {
-    'data_root': '/media/hdd/ale_navone/GAIA/datasets/dataset_5k', # Path to the dataset root directory
+    'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine', # Path to the dataset root directory
     'train_img_size': (224, 224),  # Use None to avoid resizing in this script
     'num_ugv_views': 8,
     'grid_size': (34, 34, 8), # parameter to be removed later
@@ -24,7 +25,7 @@ CONFIG = {
     'voxelize': False,
     'plot_colors': True,
     'scene_output_dir': 'visualizations/dataset_samples_visualizations',  # Directory to save visualizations
-    'num_samples': 10, # Number of samples to visualize
+    'num_samples': 20, # Number of samples to visualize
 }
 
 def main():
@@ -104,22 +105,15 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
     center_x_px = img_width / 2
     center_y_px = img_height / 2
 
-    # Function to swap X and Y axes in a matrix
-    def swipe_xy_axis(matrix):
-        matrix[[0, 1]] = matrix[[1, 0]]
-        return matrix
-    
-
 
     # Plot UAV image in background with alpha
     fig, ax = plt.subplots(figsize=(10, 10))
-    ax.imshow(uav_img_np, alpha=0.25)
+    ax.imshow(uav_img_np, alpha=0.50)
     arrows = []
 
     # Main loop over UGV images
     for i in range(len(ugv_imgs)):
         w2c_matrix = camera_poses_w2c[i]
-        w2c_matrix = swipe_xy_axis(w2c_matrix)
 
         # Try inverting pose
         try:
@@ -127,7 +121,7 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         except np.linalg.LinAlgError:
             print(f"[WARN] Cannot invert pose {i}, skipping")
             continue
-
+        
         # Load UGV images
         color_image = ugv_imgs[i].transpose(1, 2, 0)
         depth = ugv_depths[i]
@@ -160,15 +154,12 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         Yc = (v_f - cy) * z_f / fy
         Zc = z_f
 
-        Xc = -Xc
-
         ## Fix OpenCV → world-aligned camera frame
         #Yc_fixed = -Yc  # flip vertical axis
 
         # Build homogeneous coordinates
         pts_cam = np.vstack((Xc, Yc, Zc, np.ones_like(Zc)))
 
-        # Transform to world coordinates
         pts_world = c2w_matrix @ pts_cam
         Xw = pts_world[0]
         Yw = pts_world[1]
@@ -193,15 +184,17 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
             sc = plt.scatter(px, py, c=Zw, s=1.5, marker='.', linewidths=0, cmap='viridis', vmin=-1., vmax=2.)
 
         # Extract UGV position (x,y)
-        local_x, local_y, _ = c2w_matrix[:3, 3]
+        local_x, local_y, local_z = c2w_matrix[:3, 3]
 
         ugv_px = center_x_px + (local_x * pixels_per_meter)
         ugv_py = center_y_px - (local_y * pixels_per_meter)
 
         # Direction of travel = camera Z axis in world
-        direction_vector = c2w_matrix[:3, 2]
-        dx, dy = direction_vector[0], direction_vector[1]
-
+        
+        r = R.from_matrix(c2w_matrix[:3, :3])
+        _, _, yaw = r.as_euler('xyz', degrees=True)
+        dx = -np.sin(np.deg2rad(yaw))
+        dy = np.cos(np.deg2rad(yaw))
         norm = np.sqrt(dx*dx + dy*dy)
         if norm == 0:
             print(f"[WARN] Zero direction vector for pose {i}, skipping")
