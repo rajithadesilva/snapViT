@@ -13,7 +13,7 @@ from dataset import VineyardDataset
 
 # --- Configuration ---
 CONFIG = {
-    'data_root': '/home/ale_navone/ws_pytorch/GAIA/snapViT/data/double',
+    'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine',
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'train_img_size': (224, 224),
     'feature_dim': 128,
@@ -23,11 +23,12 @@ CONFIG = {
     'batch_size': 8, # Adjust based on your GPU memory
     'learning_rate': 1e-4,
     'epochs': 1000,
-    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'val_split_ratio': 0.5, # 20% of the data will be used for validation
+    'device': 'cuda:1',
+    'val_split_ratio': 0.2, 
     'use_depth': True,
     'depth_range': (0.0, 5.0), # meters
-    'ground_tile_size': 10.0, # meters
+    'ground_tile_size': 10.0, # meters,
+    'output_model_path': 'models/tempovine_2026_02_10_masked',
     
 }
 
@@ -55,12 +56,69 @@ def info_nce_loss(features1, features2, temperature):
     # Cross-entropy loss
     return F.cross_entropy(logits, labels)
 
+def masked_info_nce_loss(features1, features2, validity_mask, temperature):
+    """
+    Calculates the InfoNCE loss for two sets of feature maps, considering only valid positions.
+    validity_mask: (B, H, W) boolean tensor indicating valid positions
+    """
+    B, C, H, W = features1.shape
+
+    # Normalize features for stable cosine similarity
+    features1 = F.normalize(features1, p=2, dim=1)
+    features2 = F.normalize(features2, p=2, dim=1)
+
+    # Reshape for matrix multiplication
+    features1_flat = features1.permute(0, 2, 3, 1).reshape(B * H * W, C)
+    features2_flat = features2.permute(0, 2, 3, 1).reshape(B * H * W, C).T
+
+    # Compute similarity matrix
+    logits = torch.matmul(features1_flat, features2_flat) / temperature
+
+    # Create mask for valid positions
+    validity_mask_flat = validity_mask.view(-1)  # (B*H*W,)
+    valid_indices = torch.nonzero(validity_mask_flat).squeeze()
+
+    # Filter logits and labels based on validity
+    filtered_logits = logits[valid_indices][:, valid_indices]
+    labels = torch.arange(len(valid_indices), device=features1.device)
+
+    # Cross-entropy loss
+    return F.cross_entropy(filtered_logits, labels)
+
+def symmetric_info_nce_loss(ground_bev, overhead_bev, temperature):
+    """
+    ground_bev: (B, C, H, W)
+    overhead_bev: (B, C, H, W)
+    """
+    # Global pooling
+    ground_feat = F.adaptive_avg_pool2d(ground_bev, 1).squeeze(-1).squeeze(-1)  # (B, C)
+    overhead_feat = F.adaptive_avg_pool2d(overhead_bev, 1).squeeze(-1).squeeze(-1)  # (B, C)
+
+    # Normalize features
+    ground_feat = F.normalize(ground_feat, p=2, dim=1)
+    overhead_feat = F.normalize(overhead_feat, p=2, dim=1)
+
+    # Similarity matrix
+    logits_g2o = torch.matmul(ground_feat, overhead_feat.T) / temperature
+    logits_o2g = torch.matmul(overhead_feat, ground_feat.T) / temperature
+
+    labels = torch.arange(ground_feat.size(0), device=ground_feat.device)  
+
+    loss_g2o = F.cross_entropy(logits_g2o, labels)
+    loss_o2g = F.cross_entropy(logits_o2g, labels)
+
+    return (loss_g2o + loss_o2g) / 2
+
 
 def main():
     print(f"Using device: {CONFIG['device']}")
     best_val_loss = float('inf')
-    output_model_path = 'models/best_model.pth'
-    final_model_path = 'models/final_model.pth'
+
+    print(f"Saving models to: {CONFIG['output_model_path']}")
+    output_model_path = f"{CONFIG['output_model_path']}/best_model.pth"
+    final_model_path = f"{CONFIG['output_model_path']}/final_model.pth"
+    if not os.path.exists(CONFIG['output_model_path']):
+        os.makedirs(CONFIG['output_model_path'], exist_ok=True)
 
     # --- Data ---
 
@@ -92,15 +150,9 @@ def main():
     generator = torch.Generator()#.manual_seed()
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
 
-    # Deterministic split: first half -> train, second half -> val #TODO to remove
-    #train_indices = list(range(0, train_size))
-    #val_indices = list(range(train_size, len(full_dataset)))
 
-    #train_dataset = torch.utils.data.Subset(full_dataset, train_indices)
-    #val_dataset = torch.utils.data.Subset(full_dataset, val_indices)
-
-    train_dataloader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
-    val_dataloader = DataLoader(val_dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=4)
+    train_dataloader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=8)
+    val_dataloader = DataLoader(val_dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=8)
 
 
     # --- Model ---
@@ -122,10 +174,11 @@ def main():
             uav_data = {k: v.to(CONFIG['device']) for k, v in batch['uav_data'].items()}
             ugv_data = {k: v.to(CONFIG['device']) for k, v in batch['ugv_data'].items()}
 
-            ground_bev, overhead_bev = model(ugv_data, uav_data)
+            ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
             overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
 
-            loss = info_nce_loss(ground_bev, overhead_bev_resized, model.temperature)
+            #loss = info_nce_loss(ground_bev, overhead_bev_resized, model.temperature)
+            loss = masked_info_nce_loss(ground_bev, overhead_bev_resized, ground_validity, model.temperature)   
             loss.backward()
             optimizer.step()
 
@@ -145,10 +198,11 @@ def main():
                 uav_data = {k: v.to(CONFIG['device']) for k, v in batch['uav_data'].items()}
                 ugv_data = {k: v.to(CONFIG['device']) for k, v in batch['ugv_data'].items()}
 
-                ground_bev, overhead_bev = model(ugv_data, uav_data)
+                ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
                 overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
 
-                loss = info_nce_loss(ground_bev, overhead_bev_resized, model.temperature)
+                #loss = info_nce_loss(ground_bev, overhead_bev_resized, model.temperature)
+                loss = masked_info_nce_loss(ground_bev, overhead_bev_resized, ground_validity, model.temperature)   
                 total_val_loss += loss.item()
                 val_progress_bar.set_postfix({'loss': loss.item()})
         
