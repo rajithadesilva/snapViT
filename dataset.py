@@ -9,7 +9,7 @@ from torchvision import transforms
 class VineyardDataset(Dataset):
     def __init__(self, root_dir, config, transforms=None, depth_transforms=None):
         self.root_dir = root_dir
-        self.scene_folders = [os.path.join(root_dir, d) for d in sorted(os.listdir(root_dir)) if os.path.isdir(os.path.join(root_dir, d))]
+        self.scene_folders = [os.path.join(root_dir, d) for d in sorted(os.listdir(root_dir)) if os.path.isdir(os.path.join(root_dir, d)) and (not 'ugv_rgb' in d and not 'ugv_depth' in d and not 'temp' in d)]
         self.config = config
         self.transforms = transforms
         self.depth_transforms = depth_transforms
@@ -51,9 +51,9 @@ class VineyardDataset(Dataset):
         
         ugv_images, ugv_depths, ugv_poses, ugv_intrinsics= [], [], [], []
         for view_meta in ugv_metadata_sample:
-            img_path = os.path.join(scene_path, view_meta['image_path'])
+            img_path = os.path.join(self.root_dir, view_meta['image_path'])
             if self.config.get('use_depth', False) and 'depth_path' in view_meta:
-                depth_path = os.path.join(scene_path, view_meta['depth_path'])
+                depth_path = os.path.join(self.root_dir, view_meta['depth_path'])
                 ugv_depths.append(read_image(depth_path, mode=ImageReadMode.RGB))
             ugv_images.append(read_image(img_path, mode=ImageReadMode.RGB))
             ugv_poses.append(torch.tensor(view_meta['camera_pose_w2c'], dtype=torch.float32))
