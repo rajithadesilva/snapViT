@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 from tqdm import tqdm
 import shutil
 import json
+import matplotlib.pyplot as plt
 
 # Import necessary classes from your project files
 from model import SnapViT
@@ -70,12 +71,9 @@ def feature_map_to_rgb(feature_map: torch.Tensor) -> Image.Image:
             
     return Image.fromarray(normalized_array)
 
-def create_ugv_collage(scene_path: str, metadata: dict, num_images: int = 4) -> Image.Image:
+def create_ugv_collage(ugv_imgs_tensor: torch.Tensor, num_images: int = 4) -> Image.Image:
     """Creates a collage from a sample of UGV images."""
-    image_paths = [os.path.join(scene_path, view['image_path']) for view in metadata['ugv_images']]
-    sample_paths = image_paths[:min(len(image_paths), num_images)]
-    
-    images = [Image.open(p).resize((224, 224)) for p in sample_paths]
+    images = [transforms.ToPILImage()(ugv_imgs_tensor[i]).resize((224, 224)) for i in range(min(ugv_imgs_tensor.shape[0], num_images))]
     
     if not images:
         return Image.new('RGB', (448, 224), 'black')
@@ -92,6 +90,27 @@ def create_ugv_collage(scene_path: str, metadata: dict, num_images: int = 4) -> 
         
     return collage
 
+def plot_cosine_similarity(cosine_sim, validity_mask, id, output_dir):
+    """Plots the cosine similarity heatmap with valid areas highlighted."""
+    
+    
+    plt.figure(figsize=(10, 8))
+    plt.imshow(cosine_sim.cpu(), cmap='viridis', vmin=0, vmax=1)
+    plt.gca().set_facecolor('black')
+    
+    plt.colorbar(label='Cosine Similarity')
+    
+    # Overlay validity mask (assuming it's binary)
+    if validity_mask is not None:
+        #validity_mask = torch.rot90(validity_mask, k=2, dims=(1, 2))
+        valid_mask = validity_mask.squeeze().cpu().numpy() if validity_mask.dim() > 2 else validity_mask.cpu().numpy()
+        #plt.contour(valid_mask, colors='red', linewidths=0.5)
+    
+    plt.title(f'Cosine Similarity Heatmap for Sample {id}')
+    plt.xlabel('Overhead BEV Pixels')
+    plt.ylabel('Ground BEV Pixels')
+    plt.savefig(os.path.join(output_dir, f'{id}_cosine_similarity.png'))
+    plt.close()
 
 def main(args):
     print(f"Using device: {CONFIG['device']}")
@@ -110,7 +129,7 @@ def main(args):
     ])
     
     dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
-    dataloader = DataLoader(dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
     
     # --- Model ---
     model = SnapViT(CONFIG).to(CONFIG['device'])
@@ -120,12 +139,16 @@ def main(args):
     model.eval()
     
     print("Starting visualization...")
-    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Generating visualizations")
     
     with torch.no_grad():
-        for i, batch in progress_bar:
-            scene_folder_path = dataset.scene_folders[i]
-            scene_id = os.path.basename(scene_folder_path)
+        for i in range(args.num_samples):
+            print(f"Visualizing sample {i+1}/{args.num_samples}")
+            try:
+                batch = next(iter(dataloader))
+            except StopIteration:
+                print("No more data available in the dataloader.")
+
+            scene_id = f"scene_{i:04d}"
             
             # Create a directory for the current scene's output
             scene_output_dir = os.path.join(args.output_dir, scene_id)
@@ -159,35 +182,46 @@ def main(args):
             tile_ground_size = CONFIG['ground_tile_size']
 
             visualize_data(uav_img=uav_img,
-                           ugv_imgs=ugv_imgs, 
-                           ugv_depths=ugv_depths, 
-                           camera_poses_w2c=camera_poses_w2c, 
-                           camera_intrinsics=camera_intrinsics, 
-                           depth_range=depth_range, 
-                           tile_ground_size=tile_ground_size, 
-                           id=i, 
-                           plot_colors=True, 
-                           voxelize=True, 
-                           scene_output_dir=scene_output_dir  
-                           )
+                ugv_imgs=ugv_imgs, 
+                ugv_depths=ugv_depths, 
+                camera_poses_w2c=camera_poses_w2c, 
+                camera_intrinsics=camera_intrinsics, 
+                depth_range=depth_range, 
+                tile_ground_size=tile_ground_size, 
+                id=i, 
+                plot_colors=True, 
+                voxelize=True, 
+                scene_output_dir=scene_output_dir  
+                )
 
             # Forward pass
-            ground_bev, overhead_bev = model(ugv_data, uav_data)
+            ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
             
             # Resize overhead BEV to match ground BEV for comparison if needed
             overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
+
+            if ground_validity is not None:
+                ground_bev = ground_bev * ground_validity
 
             # Convert feature maps to images
             ground_bev_img = feature_map_to_rgb(ground_bev)
             overhead_bev_img = feature_map_to_rgb(overhead_bev_resized)
 
+            #evaluate cosine similarity between each point of the two feature maps
+            ground_bev_flat = ground_bev.view(ground_bev.shape[1], -1)
+            overhead_bev_flat = overhead_bev_resized.view(overhead_bev_resized.shape[1], -1)
+            cosine_sim = F.cosine_similarity(ground_bev_flat, overhead_bev_flat, dim=0)
+            cosine_sim = cosine_sim.view(ground_bev.shape[2], ground_bev.shape[3])
+
+            plot_cosine_similarity(cosine_sim, ground_validity, scene_id, output_dir=scene_output_dir)
             # Get the size of the original UAV image for resizing
-            with open(os.path.join(scene_folder_path, 'metadata.json'), 'r') as f:
-                metadata = json.load(f)
-            original_uav_path = os.path.join(scene_folder_path, metadata['uav_image_path'])
+            #with open(os.path.join(scene_folder_path, 'metadata.json'), 'r') as f:
+            #    metadata = json.load(f)
+            #original_uav_path = os.path.join(scene_folder_path, metadata['uav_image_path'])
             
-            with Image.open(original_uav_path) as uav_img_for_size:
-                target_size = uav_img_for_size.size # Get (width, height)
+            #with Image.open(original_uav_path) as uav_img_for_size:
+            #    target_size = uav_img_for_size.size # Get (width, height)
+            target_size = (uav_img.shape[2], uav_img.shape[1])  # (width, height)
 
             # Resize the BEV images to match the original UAV image dimensions
             # Using LANCZOS for high-quality resizing
@@ -200,13 +234,14 @@ def main(args):
 
             # Save the original UAV image and a collage of UGV images for context
             # (Metadata was already loaded above)
-            shutil.copy(original_uav_path, os.path.join(scene_output_dir, f"{scene_id}_uav_original.png"))
+            # Save the original UAV image
+            uav_img_pil = transforms.ToPILImage()(uav_img)
+            uav_img_pil.save(os.path.join(scene_output_dir, f"{scene_id}_uav_original.png"))
             
             # Create and save UGV collage
-            ugv_collage = create_ugv_collage(scene_folder_path, metadata)
+            ugv_collage = create_ugv_collage(ugv_imgs, num_images=4)
             ugv_collage.save(os.path.join(scene_output_dir, f"{scene_id}_ugv_sample_collage.png"))
 
-    print(f"\nVisualizations saved to '{args.output_dir}'.")
 
 
 if __name__ == '__main__':
@@ -214,6 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_root', type=str, default='datasets/vineyard_dataset', help="Path to the root of the processed dataset.")
     parser.add_argument('--checkpoint', type=str, required=True, help="Path to the trained model checkpoint (.pth file).")
     parser.add_argument('--output_dir', type=str, default='visualisations', help="Directory to save the output images.")
+    parser.add_argument('--num_samples', type=int, default=10, help="Number of samples to visualize. If None, visualizes all samples.")
     
     args = parser.parse_args()
     main(args)
