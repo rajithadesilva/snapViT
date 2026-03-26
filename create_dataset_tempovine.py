@@ -390,6 +390,7 @@ def unpack_ros_data(ugv_ros_synced_data, ugv_temp_rgb, ugv_temp_depth):
 
         ugv_synced_data.append({
             'timestamp': ts,
+            'idx': idx,
             'name': fname,
             'gps': {'lat': lat, 'lon': lon},
             'intrinsics': ugv_intrinsics,
@@ -560,6 +561,7 @@ def build_final_dataset(scenes, drone_data, ugv_temp_rgb, ugv_temp_depth, temp_d
 
             ugv_intrinsics = ugv_info['intrinsics']
             ugv_metadata.append({
+                "camera_idx": ugv_info['idx'],
                 "image_path": rgb_dst,
                 "depth_path": depth_dst,
                 "camera_intrinsics": ugv_intrinsics.tolist(),
@@ -613,10 +615,13 @@ def main(args):
     # process drone data
     temp_drone_dir = os.path.join(output_dir, "temp_drone_tiles")
     drone_data, drone_crs = process_geotiff(
+        ground_size_m=tile_ground_size,
         geotiff_path = orthophoto_reprojected_path,
         output_dir = temp_drone_dir,
         tile_count=tile_count,
+        padding_factor=tile_padding_factor,
         tile_rot_deg=tile_rot_deg,
+        seed=tile_seed
     )
 
     print("Opening rosbag and processing UGV data...")

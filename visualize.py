@@ -22,7 +22,7 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224',
     'train_img_size': (224, 224),
     'feature_dim': 128,
-    'num_ugv_views': 8,
+    'num_ugv_views': 1,
     'grid_size': (34, 34, 8),
     'grid_resolution': 0.3,
     'batch_size': 1, # Process one scene at a time
@@ -30,6 +30,7 @@ CONFIG = {
     'use_depth': True,
     'depth_range': (0.0, 5.0), # meters
     'ground_tile_size': 10.0, # meters
+    'consecutive_frames': False, # Whether to select consecutive frames for UGV views
 }
 
 def feature_map_to_rgb(feature_map: torch.Tensor) -> Image.Image:
@@ -106,9 +107,13 @@ def plot_cosine_similarity(cosine_sim, validity_mask, id, output_dir):
         valid_mask = validity_mask.squeeze().cpu().numpy() if validity_mask.dim() > 2 else validity_mask.cpu().numpy()
         #plt.contour(valid_mask, colors='red', linewidths=0.5)
     
+    cos_sim = (cosine_sim.cpu() * validity_mask.squeeze().cpu()).sum() / validity_mask.squeeze().cpu().sum() if validity_mask is not None else cosine_sim.cpu().mean()
+    print(f"Average cosine similarity (valid areas): {cos_sim:.4f}")
+    
     plt.title(f'Cosine Similarity Heatmap for Sample {id}')
     plt.xlabel('Overhead BEV Pixels')
     plt.ylabel('Ground BEV Pixels')
+    plt.legend([f'Avg cos sim: {cos_sim:.4f}'])
     plt.savefig(os.path.join(output_dir, f'{id}_cosine_similarity.png'))
     plt.close()
 
@@ -128,7 +133,7 @@ def main(args):
         transforms.ConvertImageDtype(torch.float),
     ])
     
-    dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
+    dataset = VineyardDataset(root_dir=args.data_root, config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms, consecutive_frames=CONFIG['consecutive_frames'])
     dataloader = DataLoader(dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
     
     # --- Model ---
@@ -198,7 +203,7 @@ def main(args):
             ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
             
             # Resize overhead BEV to match ground BEV for comparison if needed
-            overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
+            overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='nearest')# mode='bilinear', align_corners=False)
 
             if ground_validity is not None:
                 ground_bev = ground_bev * ground_validity
