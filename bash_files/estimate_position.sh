@@ -1,6 +1,6 @@
 python3 snapViT/estimate_position.py \
   --data_root /media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine_new \
-  --checkpoint /home/ale_navone/ws_pytorch/GAIA/snapViT/models/tempovine_2026_03_16_consecutive_frames_mixed_loss/best_model.pth  \
+  --checkpoint /home/ale_navone/ws_pytorch/GAIA/snapViT/models/tempovine_2026_03_26_consecutive_frames_mixed_loss_lambda_0_5/best_model.pth  \
   --output_dir snapViT/visualizations/estimate_position \
   --num_samples 20 \
   --top_k 10 \
