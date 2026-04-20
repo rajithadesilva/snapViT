@@ -7,6 +7,6 @@ verification/*
 dataset_samples_visualizations/*
 __pycache__/
 runs/*
-visualizations/
+visualizations/*
 evaluation/*
 graph_outputs/*
