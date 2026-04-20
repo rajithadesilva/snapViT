@@ -23,7 +23,7 @@ CONFIG = {
     "grid_size": (34, 34, 8),
     "grid_resolution": 0.3,
     "batch_size": 1,
-    "device": "cuda" if torch.cuda.is_available() else "cpu",
+    "device": "cuda:0" if torch.cuda.is_available() else "cpu",
     "use_depth": True,
     "depth_range": (0.0, 5.0),
     "ground_tile_size": 10.0,

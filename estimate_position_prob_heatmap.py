@@ -23,7 +23,7 @@ CONFIG = {
 	"grid_size": (34, 34, 8),
 	"grid_resolution": 0.3,
 	"batch_size": 1,
-	"device": "cuda:0" if torch.cuda.is_available() else "cpu",
+	"device": "cuda" if torch.cuda.is_available() else "cpu",
 	"use_depth": True,
 	"depth_range": (0.0, 5.0),
 	"ground_tile_size": 10.0,
@@ -320,45 +320,28 @@ def render_scene(
 
 	gt_x, gt_y, dir_x, dir_y = gt_xy_dir
 
-	fig = plt.figure(figsize=(20, 5))
-	gs = fig.add_gridspec(
-		1,
-		6,
-		width_ratios=[1.0, 1.0, 1.0, 0.07, 0.05, 1.0],
-		wspace=0.04,
-		left=0.01,
-		right=0.99,
-		top=0.93,
-		bottom=0.03,
-	)
-	ax0 = fig.add_subplot(gs[0, 0])
-	ax1 = fig.add_subplot(gs[0, 1])
-	ax2 = fig.add_subplot(gs[0, 2])
-	cax = fig.add_subplot(gs[0, 3])
-	ax3 = fig.add_subplot(gs[0, 5])
-	title_fs = 16
+	fig = plt.figure(figsize=(18, 5))
+	ax0 = fig.add_subplot(1, 4, 1)
+	ax1 = fig.add_subplot(1, 4, 2)
+	ax2 = fig.add_subplot(1, 4, 3)
+	ax3 = fig.add_subplot(1, 4, 4)
 
-	ax0.set_title("UGV Query (single image)", fontsize=title_fs)
+	ax0.set_title("UGV Query (single image)")
 	ax0.imshow(ugv_img)
 	ax0.axis("off")
 
-	ax1.set_title("UAV Image", fontsize=title_fs)
+	ax1.set_title("Cosine Similarity + Predictions")
 	ax1.imshow(uav_img)
-	ax1.axis("off")
-
-	ax2.set_title("Cosine Similarity + Top-k points", fontsize=title_fs)
-	ax2.imshow(uav_img, alpha=0.4)
 	sim_up_inverse_y = np.flipud(sim_up)
-	hm = ax2.imshow(sim_up_inverse_y, cmap="plasma", alpha=0.6, vmin=0.0, vmax=1.0)
+	hm = ax1.imshow(sim_up_inverse_y, cmap="plasma", alpha=0.6, vmin=0.0, vmax=1.0)
 	for i, (x_px, y_px, p) in enumerate(pred_xy):
-		label = "Top-k candidates" if i == 0 else None
-		ax2.scatter([x_px], [y_px], s=30, c="white", edgecolors="black", linewidths=1.0, label=label)
-		#ax2.text(x_px + 3, y_px - 3, f"#{i+1} ({p:.2f})", color="white", fontsize=8)
+		ax1.scatter([x_px], [y_px], s=30, c="white", edgecolors="black", linewidths=1.0)
+		ax1.text(x_px + 3, y_px - 3, f"#{i+1} ({p:.2f})", color="white", fontsize=8)
 
 	# Ground-truth position and GT orientation arrow.
-	ax2.scatter([gt_x], [gt_y], s=80, c="yellow", edgecolors="black", linewidths=1.5, label="GT position")
+	ax1.scatter([gt_x], [gt_y], s=80, c="yellow", edgecolors="black", linewidths=1.5, label="GT position")
 	arrow_len = 20.0
-	ax2.arrow(
+	ax1.arrow(
 		gt_x,
 		gt_y,
 		dir_x * arrow_len,
@@ -369,17 +352,21 @@ def render_scene(
 		color="red",
 		length_includes_head=True,
 	)
+	ax1.set_xlim(0, w_uav)
+	ax1.set_ylim(h_uav, 0)
+	ax1.legend(loc="lower right")
+	fig.colorbar(hm, ax=ax1, fraction=0.046, pad=0.04)
+
+	ax2.set_title("Probability Heatmap")
+	prob_up_inverse_y = np.flipud(prob_up)
+	im2 = ax2.imshow(prob_up_inverse_y, cmap="magma", vmin=0.0, vmax=max(float(prob_up.max()), 1e-6))
 	ax2.set_xlim(0, w_uav)
 	ax2.set_ylim(h_uav, 0)
-	ax2.legend(loc="lower right")
-	ax2.axis("off")
-	cbar = fig.colorbar(hm, cax=cax)
-	cbar.ax.tick_params(pad=2)
+	fig.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
 
-	ax3.set_title("Best Yaw per Grid Point", fontsize=title_fs)
-	ax3.imshow(uav_img, alpha=0.4)
-	prob_up_inverse_y = np.flipud(prob_up)
-	ax3.imshow(prob_up_inverse_y, cmap="magma", alpha=0.40, vmin=0.0, vmax=max(float(prob_up.max()), 1e-6))
+	ax3.set_title("Best Yaw per Grid Point")
+	ax3.imshow(uav_img, alpha=0.6)
+	ax3.imshow(prob_up_inverse_y, cmap="magma", alpha=0.30, vmin=0.0, vmax=max(float(prob_up.max()), 1e-6))
 
 	best_yaw_np = best_yaw_map_deg.detach().cpu().numpy()
 	prob_np = prob_map.detach().cpu().numpy()
@@ -430,7 +417,9 @@ def render_scene(
 	)
 	ax3.set_xlim(0, w_uav)
 	ax3.set_ylim(h_uav, 0)
-	ax3.axis("off")
+
+	fig.suptitle(f"Scene: {scene_name}")
+	fig.tight_layout()
 
 	out_path = os.path.join(out_dir, f"{scene_name}_localization.png")
 	fig.savefig(out_path, dpi=180)
