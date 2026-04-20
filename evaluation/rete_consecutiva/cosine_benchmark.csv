@@ -1,1 +1,0 @@
-scenario,global_mean,delta_global_mean_vs_baseline,global_median,global_std,global_min,global_max,global_p10,global_p90,total_valid_pixels,uav_rotate_deg,use_swapped_uav,ground_camera_yaw_deg,ground_image_rotate_deg,use_swapped_ground,num_scenes

@@ -1,12 +1,11 @@
 data/*
-models/
-models*/
+models/**
 datasets/*
 visualisations/*
 verification/*
-dataset_samples_visualizations/*
+dataset_samples_visualizations*/
 __pycache__/
-runs/*
-visualizations/*
+runs/**
+visualizations/**
 evaluation/*
-graph_outputs/*
+graph_outputs/**
