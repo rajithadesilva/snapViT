@@ -169,7 +169,7 @@ class GroundEncoder(nn.Module):
         # Swap the first and second rows for all world-to-camera matrices
         #TODO remove after correction of dataset generation
         w2c_matrices = w2c_matrices.clone()
-        w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
+        #w2c_matrices[:, :, [0, 1], :] = w2c_matrices[:, :, [1, 0], :]
 
         # Interpolate depth maps to feature map size
         ugv_depths = F.interpolate(

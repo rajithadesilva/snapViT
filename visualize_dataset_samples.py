@@ -12,9 +12,9 @@ from dataset import VineyardDataset
 from matplotlib.patches import Circle, FancyArrow
 # --- Configuration ---
 CONFIG = {
-    'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine', # Path to the dataset root directory
+    'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine_new', # Path to the dataset root directory
     'train_img_size': (224, 224),  # Use None to avoid resizing in this script
-    'num_ugv_views': 8,
+    'num_ugv_views': 1,
     'grid_size': (34, 34, 8), # parameter to be removed later
     'grid_resolution': 0.3, # meters per grid cell to be removed later
     'batch_size': 1, # Adjust based on your GPU memory
@@ -26,6 +26,7 @@ CONFIG = {
     'plot_colors': True,
     'scene_output_dir': 'visualizations/dataset_samples_visualizations',  # Directory to save visualizations
     'num_samples': 20, # Number of samples to visualize
+    'consecutive_frames': False, # Whether to select consecutive frames for UGV views
 }
 
 def main():
@@ -33,6 +34,8 @@ def main():
     parser.add_argument('--data_root', type=str, default=CONFIG['data_root'], help="Path to the root of the processed dataset (e.g., 'vineyard_dataset').")
     parser.add_argument('--scene_output_dir', type=str, default=CONFIG['scene_output_dir'], help="Directory to save the output visualizations.")
     parser.add_argument('--num_samples', type=int, default=CONFIG['num_samples'], help="Number of samples to visualize.")
+    parser.add_argument('--show_z_degrees', action='store_true', default=False, help="Show camera z-axis rotation degrees in the image title.")
+    args = parser.parse_args()
     print(f"Using device: {CONFIG['device']}")
     
     # --- Data ---
@@ -50,7 +53,7 @@ def main():
     voxelize = CONFIG['voxelize']
     output_dir = CONFIG['scene_output_dir']
 
-    full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms)
+    full_dataset = VineyardDataset(root_dir=CONFIG['data_root'], config=CONFIG, transforms=image_transforms, depth_transforms=depth_transforms, consecutive_frames=CONFIG['consecutive_frames'])
 
     if len(full_dataset) == 0:
         print("No data found in the specified data root.")
@@ -59,14 +62,11 @@ def main():
 
     dataloader = DataLoader(full_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
 
-    # Visualize a few samples
-    for i in range(CONFIG['num_samples']):
+    # Visualize a few samples without resetting the dataloader iterator every loop.
+    for i, data in enumerate(dataloader):
+        if i >= CONFIG['num_samples']:
+            break
         print(f"Visualizing sample {i}")
-        try:
-            data = next(iter(dataloader))
-        except StopIteration:
-            print("No more data available in the dataloader.")
-
         data = {k: {kk: vv.to(CONFIG['device']) for kk, vv in v.items()} for k, v in data.items()}
         uav_img = data['uav_data']['uav_image'][0]
         ugv_imgs = data['ugv_data']['ugv_images'][0]
@@ -84,12 +84,16 @@ def main():
                         id=i, 
                         plot_colors=plot_colors,
                         voxelize=voxelize,
-                        scene_output_dir=output_dir
+                        scene_output_dir=output_dir,
+                        show_z_degrees=args.show_z_degrees
                         )
+
+    if len(full_dataset) < CONFIG['num_samples']:
+        print(f"Requested {CONFIG['num_samples']} samples but dataset has {len(full_dataset)} scenes.")
 
 def visualize_data(uav_img, ugv_imgs, ugv_depths, 
                    camera_intrinsics, camera_poses_w2c, 
-                   depth_range, tile_ground_size, id, plot_colors, voxelize=True, scene_output_dir="."
+                   depth_range, tile_ground_size, id, plot_colors, voxelize=True, scene_output_dir=".", show_z_degrees=False
                    ):
 
     # Convert tensors to numpy
@@ -110,6 +114,7 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
     fig, ax = plt.subplots(figsize=(10, 10))
     ax.imshow(uav_img_np, alpha=0.50)
     arrows = []
+    z_degrees_list = []  # Store z-axis rotation degrees if requested
 
     # Main loop over UGV images
     for i in range(len(ugv_imgs)):
@@ -193,6 +198,8 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         
         r = R.from_matrix(c2w_matrix[:3, :3])
         _, _, yaw = r.as_euler('xyz', degrees=True)
+        if show_z_degrees:
+            z_degrees_list.append(yaw)
         dx = -np.sin(np.deg2rad(yaw))
         dy = np.cos(np.deg2rad(yaw))
         norm = np.sqrt(dx*dx + dy*dy)
@@ -206,11 +213,11 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
         arrow_length = 0.02*img_width  # 2% of image width
         end_x = ugv_px + dx * arrow_length
         end_y = ugv_py - dy * arrow_length
-        arrows.append([ugv_px, ugv_py, end_x, end_y])
+        arrows.append([ugv_px, ugv_py, end_x, end_y, yaw])
 
     # Draw UGV positions
     for arrow in arrows:
-        ugv_px, ugv_py, end_x, end_y = arrow
+        ugv_px, ugv_py, end_x, end_y, yaw = arrow
         ax.add_patch(FancyArrow(
             ugv_px, ugv_py,
             end_x - ugv_px, end_y - ugv_py,
@@ -220,11 +227,26 @@ def visualize_data(uav_img, ugv_imgs, ugv_depths,
             # Draw UGV position circle
         ax.add_patch(Circle((ugv_px, ugv_py), radius=0.005*img_width,
                             color='yellow', ec='black', lw=2))
+        label_x = end_x + 0.01 * img_width
+        label_y = end_y - 0.01 * img_height
+        ax.text(
+            label_x,
+            label_y,
+            f"{yaw:.1f} deg",
+            color='white',
+            fontsize=9,
+            fontweight='bold',
+            bbox=dict(facecolor='black', alpha=0.5, edgecolor='none', pad=1.0)
+        )
     
     if not plot_colors: 
         plt.colorbar(sc, ax=ax, label='Height (m)')
 
-    ax.set_title("UAV Image with UGV Positions + Points")
+    title = "UAV Image with UGV Positions + Points"
+    if show_z_degrees and z_degrees_list:
+        avg_z_deg = np.mean(z_degrees_list)
+        title += f" (Z-axis: {avg_z_deg:.1f}°)"
+    ax.set_title(title)
     ax.set_xlim(0, img_width)
     ax.set_ylim(img_height, 0)  # invert Y axis so it matches image coordinates
     ax.set_aspect('equal')
