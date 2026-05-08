@@ -10,12 +10,12 @@ import numpy as np
 
 from torch.utils.tensorboard import SummaryWriter
 
-from model import SnapViT
-from dataset import VineyardDataset
+from src.models.snapvit import SnapViT
+from src.data.dataset import VineyardDataset
 
 # --- Configuration ---
 CONFIG = {
-    'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine_new',
+    'data_root': '/media/data/alessandro/GAIA/tempovine/dataset_tempovine_train',
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'train_img_size': (224, 224),
     'feature_dim': 128,
@@ -23,6 +23,8 @@ CONFIG = {
     'grid_size': (34, 34, 8), # Smaller grid for faster training
     'grid_resolution': 0.3, # meters per grid cell
     'batch_size': 8, # Adjust based on your GPU memory
+    'num_workers': 4, # Reduced from 8 (8 workers for batch_size=8 is inefficient)
+    'pin_memory': True, # Pin data to CPU memory for faster GPU transfer
     'learning_rate': 1e-4,
     'epochs': 1000,
     'device': 'cuda:0',
@@ -30,10 +32,12 @@ CONFIG = {
     'use_depth': True,
     'depth_range': (0.0, 5.0), # meters
     'ground_tile_size': 10.0, # meters,
-    'output_model_path': 'models/tempovine_2026_03_26_consecutive_frames_mixed_loss_lambda_0_5',
+    'output_model_path': 'models/da_buttare',
     'consecutive_frames': True, # Whether to select consecutive frames for UGV views
-    'pixel_loss_weight': 0.5, # Weight for the pixel-level loss component (if implemented)
+    'pixel_loss_weight': 1.0, # Weight for the pixel-level loss component (if implemented)
     'mixed_loss_delay': 5, # Number of epochs to wait before starting to include the pixel-level loss in the total loss calculation
+        'gradient_checkpointing': False,  # Set to True if running out of GPU memory
+        'monitor_gpu_memory': True,  # Print GPU memory usage per epoch
     
 }
 
@@ -150,6 +154,266 @@ def symmetric_info_nce_loss_masked(ground_bev, overhead_bev, validity_mask, temp
     return 0.5 * (loss_g2o + loss_o2g)
 
 
+def pool_bev_embeddings(features, validity_mask=None):
+    """Pool a BEV feature map into a single embedding per sample.
+
+    If `validity_mask` is provided, use masked average pooling; otherwise use
+    standard global average pooling.
+    """
+    if validity_mask is None:
+        return features.mean(dim=(2, 3))
+    return masked_avg_pool(features, validity_mask)
+
+
+def cosine_distance(x, y, eps=1e-8):
+    """Returns 1 - cosine similarity for matching rows in x and y."""
+    x = F.normalize(x, p=2, dim=1)
+    y = F.normalize(y, p=2, dim=1)
+    return 1.0 - (x * y).sum(dim=1).clamp(-1.0 + eps, 1.0 - eps)
+
+
+def masked_mse_loss(features1, features2, validity_mask=None):
+    """Masked mean squared error on BEV feature maps."""
+    diff = (features1 - features2) ** 2
+    if validity_mask is None:
+        return diff.mean()
+
+    if validity_mask.dim() == 3:
+        mask = validity_mask.unsqueeze(1).float()
+    elif validity_mask.dim() == 4 and validity_mask.size(1) == 1:
+        mask = validity_mask.float()
+    else:
+        raise ValueError(f"Expected validity_mask shape (B,H,W) or (B,1,H,W), got {tuple(validity_mask.shape)}")
+
+    masked_diff = diff * mask
+    return masked_diff.sum() / mask.sum().clamp(min=1e-8)
+
+
+def masked_smooth_l1_loss(features1, features2, validity_mask=None, beta=1.0):
+    """Masked Smooth L1 loss on BEV feature maps."""
+    diff = F.smooth_l1_loss(features1, features2, reduction='none', beta=beta)
+    if validity_mask is None:
+        return diff.mean()
+
+    if validity_mask.dim() == 3:
+        mask = validity_mask.unsqueeze(1).float()
+    elif validity_mask.dim() == 4 and validity_mask.size(1) == 1:
+        mask = validity_mask.float()
+    else:
+        raise ValueError(f"Expected validity_mask shape (B,H,W) or (B,1,H,W), got {tuple(validity_mask.shape)}")
+
+    masked_diff = diff * mask
+    return masked_diff.sum() / mask.sum().clamp(min=1e-8)
+
+
+def masked_cosine_loss(features1, features2, validity_mask=None):
+    """Masked cosine alignment loss on BEV feature maps."""
+    f1 = F.normalize(features1, p=2, dim=1)
+    f2 = F.normalize(features2, p=2, dim=1)
+    loss_map = 1.0 - (f1 * f2).sum(dim=1)
+
+    if validity_mask is None:
+        return loss_map.mean()
+
+    if validity_mask.dim() == 3:
+        mask = validity_mask.float()
+    elif validity_mask.dim() == 4 and validity_mask.size(1) == 1:
+        mask = validity_mask.squeeze(1).float()
+    else:
+        raise ValueError(f"Expected validity_mask shape (B,H,W) or (B,1,H,W), got {tuple(validity_mask.shape)}")
+
+    return (loss_map * mask).sum() / mask.sum().clamp(min=1e-8)
+
+
+def nt_xent_loss(anchor, positive, temperature=0.1, validity_mask=None):
+    """Standard NT-Xent / InfoNCE loss for paired embeddings or BEV maps.
+
+    If `validity_mask` is provided, `anchor` and `positive` are treated as BEV
+    feature maps and are pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        anchor = pool_bev_embeddings(anchor, validity_mask)
+        positive = pool_bev_embeddings(positive, validity_mask)
+
+    anchor = F.normalize(anchor, p=2, dim=1)
+    positive = F.normalize(positive, p=2, dim=1)
+
+    logits = torch.matmul(anchor, positive.t()) / torch.clamp(temperature, min=1e-6)
+    labels = torch.arange(anchor.size(0), device=anchor.device)
+    return F.cross_entropy(logits, labels)
+
+
+def supervised_contrastive_loss(embeddings, labels, temperature=0.1, validity_mask=None):
+    """Supervised contrastive loss for embeddings or BEV maps.
+
+    If `validity_mask` is provided, `embeddings` is pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        embeddings = pool_bev_embeddings(embeddings, validity_mask)
+
+    embeddings = F.normalize(embeddings, p=2, dim=1)
+    logits = torch.matmul(embeddings, embeddings.t()) / torch.clamp(temperature, min=1e-6)
+    logits = logits - logits.max(dim=1, keepdim=True).values.detach()
+
+    labels = labels.view(-1, 1)
+    positive_mask = torch.eq(labels, labels.t()).to(embeddings.device)
+    eye_mask = torch.eye(labels.size(0), dtype=torch.bool, device=embeddings.device)
+    positive_mask = positive_mask & ~eye_mask
+
+    log_prob = logits - torch.logsumexp(logits.masked_fill(eye_mask, float('-inf')), dim=1, keepdim=True)
+    positive_count = positive_mask.sum(dim=1).clamp(min=1)
+    mean_log_prob_pos = (positive_mask.float() * log_prob).sum(dim=1) / positive_count
+
+    return -mean_log_prob_pos.mean()
+
+
+def triplet_loss(anchor, positive, negative, margin=0.2, distance='cosine', validity_mask=None):
+    """Triplet loss on embeddings or BEV maps.
+
+    If `validity_mask` is provided, all three inputs are pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        anchor = pool_bev_embeddings(anchor, validity_mask)
+        positive = pool_bev_embeddings(positive, validity_mask)
+        negative = pool_bev_embeddings(negative, validity_mask)
+
+    if distance == 'cosine':
+        pos_dist = cosine_distance(anchor, positive)
+        neg_dist = cosine_distance(anchor, negative)
+    elif distance == 'euclidean':
+        pos_dist = torch.norm(anchor - positive, dim=1)
+        neg_dist = torch.norm(anchor - negative, dim=1)
+    else:
+        raise ValueError("distance must be 'cosine' or 'euclidean'")
+
+    return F.relu(pos_dist - neg_dist + margin).mean()
+
+
+def batch_hard_triplet_loss(embeddings, labels, margin=0.2, distance='cosine', validity_mask=None):
+    """Batch-hard triplet loss using hardest positive and negative within the batch.
+
+    If `validity_mask` is provided, `embeddings` is treated as a BEV feature map and
+    pooled before the loss is computed.
+    """
+    if validity_mask is not None:
+        embeddings = pool_bev_embeddings(embeddings, validity_mask)
+
+    if embeddings.size(0) != labels.size(0):
+        raise ValueError("embeddings and labels must have the same batch size")
+
+    if distance == 'cosine':
+        sim = F.normalize(embeddings, p=2, dim=1) @ F.normalize(embeddings, p=2, dim=1).t()
+        dist = 1.0 - sim
+    elif distance == 'euclidean':
+        dist = torch.cdist(embeddings, embeddings, p=2)
+    else:
+        raise ValueError("distance must be 'cosine' or 'euclidean'")
+
+    labels = labels.view(-1, 1)
+    same = labels.eq(labels.t())
+    eye = torch.eye(labels.size(0), dtype=torch.bool, device=embeddings.device)
+    pos_mask = same & ~eye
+    neg_mask = ~same
+
+    hardest_pos = dist.masked_fill(~pos_mask, float('-inf')).max(dim=1).values
+    hardest_neg = dist.masked_fill(~neg_mask, float('inf')).min(dim=1).values
+
+    valid = torch.isfinite(hardest_pos) & torch.isfinite(hardest_neg)
+    if not valid.any():
+        return dist.sum() * 0.0
+
+    return F.relu(hardest_pos[valid] - hardest_neg[valid] + margin).mean()
+
+
+def margin_ranking_triplet_loss(anchor, positive, negative, margin=0.2, distance='cosine', validity_mask=None):
+    """Margin ranking loss view of triplet learning on embeddings or BEV maps."""
+    if validity_mask is not None:
+        anchor = pool_bev_embeddings(anchor, validity_mask)
+        positive = pool_bev_embeddings(positive, validity_mask)
+        negative = pool_bev_embeddings(negative, validity_mask)
+
+    if distance == 'cosine':
+        pos_score = 1.0 - cosine_distance(anchor, positive)
+        neg_score = 1.0 - cosine_distance(anchor, negative)
+    elif distance == 'euclidean':
+        pos_score = -torch.norm(anchor - positive, dim=1)
+        neg_score = -torch.norm(anchor - negative, dim=1)
+    else:
+        raise ValueError("distance must be 'cosine' or 'euclidean'")
+
+    target = torch.ones_like(pos_score)
+    return F.margin_ranking_loss(pos_score, neg_score, target, margin=margin)
+
+
+def cosine_embedding_pair_loss(anchor, positive, negative=None, validity_mask=None):
+    """Cosine embedding loss for positive pairs, optionally with negatives.
+
+    If `validity_mask` is provided, inputs are pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        anchor = pool_bev_embeddings(anchor, validity_mask)
+        positive = pool_bev_embeddings(positive, validity_mask)
+        if negative is not None:
+            negative = pool_bev_embeddings(negative, validity_mask)
+
+    anchor = F.normalize(anchor, p=2, dim=1)
+    positive = F.normalize(positive, p=2, dim=1)
+    pos_loss = F.cosine_embedding_loss(anchor, positive, torch.ones(anchor.size(0), device=anchor.device))
+
+    if negative is None:
+        return pos_loss
+
+    negative = F.normalize(negative, p=2, dim=1)
+    neg_loss = F.cosine_embedding_loss(anchor, negative, -torch.ones(anchor.size(0), device=anchor.device))
+    return 0.5 * (pos_loss + neg_loss)
+
+
+def barlow_twins_loss(z1, z2, lambda_coeff=5e-3, validity_mask=None):
+    """Barlow Twins loss for embeddings or BEV maps.
+
+    If `validity_mask` is provided, inputs are pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        z1 = pool_bev_embeddings(z1, validity_mask)
+        z2 = pool_bev_embeddings(z2, validity_mask)
+
+    z1 = (z1 - z1.mean(dim=0)) / (z1.std(dim=0) + 1e-9)
+    z2 = (z2 - z2.mean(dim=0)) / (z2.std(dim=0) + 1e-9)
+
+    n = z1.size(0)
+    c = (z1.T @ z2) / n
+
+    on_diag = torch.diagonal(c).add_(-1).pow(2).sum()
+    off_diag = (c - torch.diag(torch.diagonal(c))).pow(2).sum()
+    return on_diag + lambda_coeff * off_diag
+
+
+def vicreg_loss(z1, z2, sim_coeff=25.0, var_coeff=25.0, cov_coeff=1.0, validity_mask=None):
+    """VICReg loss for embeddings or BEV maps.
+
+    If `validity_mask` is provided, inputs are pooled before computing the loss.
+    """
+    if validity_mask is not None:
+        z1 = pool_bev_embeddings(z1, validity_mask)
+        z2 = pool_bev_embeddings(z2, validity_mask)
+
+    repr_loss = F.mse_loss(z1, z2)
+
+    std_z1 = torch.sqrt(z1.var(dim=0) + 1e-4)
+    std_z2 = torch.sqrt(z2.var(dim=0) + 1e-4)
+    var_loss = torch.mean(F.relu(1.0 - std_z1)) + torch.mean(F.relu(1.0 - std_z2))
+
+    z1 = z1 - z1.mean(dim=0)
+    z2 = z2 - z2.mean(dim=0)
+    n, d = z1.shape
+    cov_z1 = (z1.T @ z1) / (n - 1)
+    cov_z2 = (z2.T @ z2) / (n - 1)
+    off_diag_mask = ~torch.eye(d, dtype=torch.bool, device=z1.device)
+    cov_loss = cov_z1.masked_select(off_diag_mask).pow(2).sum() / d + cov_z2.masked_select(off_diag_mask).pow(2).sum() / d
+
+    return sim_coeff * repr_loss + var_coeff * var_loss + cov_coeff * cov_loss
+
+
 def main():
     print(f"Using device: {CONFIG['device']}")
     best_val_loss = float('inf')
@@ -210,8 +474,22 @@ def main():
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
 
 
-    train_dataloader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=8)
-    val_dataloader = DataLoader(val_dataset, batch_size=CONFIG['batch_size'], shuffle=False, num_workers=8)
+    train_dataloader = DataLoader(
+        train_dataset, 
+        batch_size=CONFIG['batch_size'], 
+        shuffle=True, 
+        num_workers=CONFIG.get('num_workers', 4),
+        pin_memory=CONFIG.get('pin_memory', True),
+        prefetch_factor=2
+    )
+    val_dataloader = DataLoader(
+        val_dataset, 
+        batch_size=CONFIG['batch_size'], 
+        shuffle=False, 
+        num_workers=CONFIG.get('num_workers', 4),
+        pin_memory=CONFIG.get('pin_memory', True),
+        prefetch_factor=2
+    )
 
 
     # --- Model ---
@@ -220,7 +498,18 @@ def main():
 
     writer = SummaryWriter(log_dir='runs')
 
+    # Helper function to monitor GPU memory
+    def log_gpu_memory(label=""):
+        if torch.cuda.is_available() and CONFIG.get('monitor_gpu_memory', False):
+            reserved = torch.cuda.memory_reserved(CONFIG['device']) / 1e9
+            allocated = torch.cuda.memory_allocated(CONFIG['device']) / 1e9
+            print(f"  {label} | GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
+
     print("Starting training...")
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print(f"GPU Memory available: {torch.cuda.get_device_properties(CONFIG['device']).total_memory / 1e9:.2f} GB")
+
     for epoch in range(CONFIG['epochs']):
         # --- Training Loop ---
         model.train()
@@ -229,11 +518,15 @@ def main():
         total_pixel_train_loss = 0
         train_progress_bar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{CONFIG['epochs']} [Training]", leave=False)
 
+        if epoch == 0:
+            print("Loading first training batch...")
+
         for batch in train_progress_bar:
             optimizer.zero_grad()
 
-            uav_data = {k: v.to(CONFIG['device']) for k, v in batch['uav_data'].items()}
-            ugv_data = {k: v.to(CONFIG['device']) for k, v in batch['ugv_data'].items()}
+            # Data to GPU (pre-loaded with pin_memory)
+            uav_data = {k: v.to(CONFIG['device'], non_blocking=True) for k, v in batch['uav_data'].items()}
+            ugv_data = {k: v.to(CONFIG['device'], non_blocking=True) for k, v in batch['ugv_data'].items()}
 
             ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
             overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
@@ -262,6 +555,9 @@ def main():
         writer.add_scalar('PixelLoss/Train', avg_pixel_loss, epoch+1)
         writer.add_scalar('GlobalLoss/Train', avg_global_loss, epoch+1)
 
+        # Clear cache between epochs
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         # --- Validation Loop ---
         model.eval()
         total_val_loss = 0
@@ -271,8 +567,8 @@ def main():
         
         with torch.no_grad():
             for batch in val_progress_bar:
-                uav_data = {k: v.to(CONFIG['device']) for k, v in batch['uav_data'].items()}
-                ugv_data = {k: v.to(CONFIG['device']) for k, v in batch['ugv_data'].items()}
+                uav_data = {k: v.to(CONFIG['device'], non_blocking=True) for k, v in batch['uav_data'].items()}
+                ugv_data = {k: v.to(CONFIG['device'], non_blocking=True) for k, v in batch['ugv_data'].items()}
 
                 ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
                 overhead_bev_resized = F.interpolate(overhead_bev, size=ground_bev.shape[2:], mode='bilinear', align_corners=False)
