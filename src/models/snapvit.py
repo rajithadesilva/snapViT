@@ -3,6 +3,49 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 
+
+def infer_model_type_from_name(model_name):
+    """Infers the backbone family from a timm model name."""
+    name = model_name.lower()
+
+    if 'dinov3' in name or 'dinov2' in name:
+        return 'dinov3'
+    if 'swin' in name:
+        return 'swin'
+    if 'convnext' in name:
+        return 'convnext'
+    if 'resnet' in name:
+        return 'resnet'
+    if 'vit' in name or 'deit' in name or 'beit' in name:
+        return 'vit'
+
+    raise ValueError(
+        f"Could not infer model type from model name '{model_name}'. "
+        "Supported families by name are: vit/deit/beit, swin, dinov2/dinov3, convnext, resnet."
+    )
+
+
+def create_feature_extractor(model_name='vit_base_patch16_224', pretrained=True, model_type=None):
+    """Builds the requested backbone feature extractor.
+
+    If model_type is omitted, it is inferred from model_name.
+    """
+    model_type = infer_model_type_from_name(model_name) if model_type is None else model_type.lower()
+    if model_type == 'vit':
+        return ViTFeatureExtractor(model_name=model_name, pretrained=pretrained)
+    if model_type == 'resnet':
+        return ResNetFeatureExtractor(model_name=model_name, pretrained=pretrained)
+    if model_type == 'convnext':
+        return ConvNeXTFeatureExtractor(model_name=model_name, pretrained=pretrained)
+    if model_type == 'swin':
+        return SwintTFeatureExtractor(model_name=model_name, pretrained=pretrained)
+    if model_type == 'dinov3':
+        return Dinov3FeatureExtractor(model_name=model_name, pretrained=pretrained)
+    raise ValueError(
+        f"Unsupported model_type '{model_type}'. "
+        "Expected one of: vit, resnet, convnext, swin, dinov3."
+    )
+
 class ViTFeatureExtractor(nn.Module):
     """
     A Vision Transformer that outputs a 2D feature map.
@@ -22,7 +65,109 @@ class ViTFeatureExtractor(nn.Module):
         patch_embeddings = patch_embeddings[:, 1:, :]  # Remove [CLS] token
         H_feat, W_feat = H // self.patch_size, W // self.patch_size
         features = patch_embeddings.permute(0, 2, 1).reshape(B, self.embed_dim, H_feat, W_feat)
-        return features
+        
+        # Enforce channels-first output: (B, C, H, W)
+        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+            print("Permuting features to channels-first format")
+            features = features.permute(0, 3, 1, 2).contiguous()
+        return features.contiguous()
+    
+class ResNetFeatureExtractor(nn.Module):
+    """
+    A ResNet that outputs a 2D feature map.
+    This is the shared backbone for both the ground and overhead encoders.
+    """
+    def __init__(self, model_name='resnet50', pretrained=True):
+        super().__init__()
+        self.resnet = timm.create_model(model_name, pretrained=pretrained)
+        self.resnet.head = nn.Identity()  # Remove the classification head
+        self.embed_dim = self.resnet.num_features
+        print(f"Initialized ResNetFeatureExtractor with embed dim {self.embed_dim}")
+
+    def forward(self, x):
+        features = self.resnet.forward_features(x)
+
+        # Enforce channels-first output: (B, C, H, W)
+        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+            features = features.permute(0, 3, 1, 2).contiguous()
+        return features.contiguous()
+    
+
+class ConvNeXTFeatureExtractor(nn.Module):
+    """
+    A ConvNeXT that outputs a 2D feature map.
+    This is the shared backbone for both the ground and overhead encoders.
+    """
+    def __init__(self, model_name='convnext_tiny', pretrained=True):
+        super().__init__()
+        self.convnext = timm.create_model(model_name, pretrained=pretrained)
+        self.convnext.head = nn.Identity()  # Remove the classification head
+        self.embed_dim = self.convnext.num_features
+        print(f"Initialized ConvNeXTFeatureExtractor with embed dim {self.embed_dim}")
+
+    def forward(self, x):
+        features = self.convnext.forward_features(x)
+
+        # Enforce channels-first output: (B, C, H, W)
+        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+            features = features.permute(0, 3, 1, 2).contiguous()
+        return features.contiguous()
+    
+class SwintTFeatureExtractor(nn.Module):
+    """
+    A Swin Transformer that outputs a 2D feature map.
+    This is the shared backbone for both the ground and overhead encoders.
+    """
+    def __init__(self, model_name='swin_base_patch4_window7_224', pretrained=True):
+        super().__init__()
+        self.swin = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            features_only=True,
+            out_indices=(3,),
+        )
+        self.embed_dim = self.swin.feature_info.channels()[-1]
+        print(f"Initialized SwintTFeatureExtractor with embed dim {self.embed_dim}")
+
+    def forward(self, x):
+        features = self.swin(x)[0]
+
+        # Enforce channels-first output: (B, C, H, W)
+        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+            features = features.permute(0, 3, 1, 2).contiguous()
+        return features.contiguous()
+    
+class Dinov3FeatureExtractor(nn.Module):
+    """
+    A DINOv3 Vision Transformer that outputs a 2D feature map.
+    This is the shared backbone for both the ground and overhead encoders.
+    """
+    def __init__(self, model_name='vit_7b_patch16_dinov3', pretrained=True):
+        super().__init__()
+        self.dinov3 = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            features_only=True,
+            out_indices=(0,),
+        )
+        # Use the channel size corresponding to the selected out_indices (index 0 here)
+        self.embed_dim = self.dinov3.feature_info.channels()[0]
+        print(f"Initialized Dinov3FeatureExtractor with embed dim {self.embed_dim}")
+
+    def forward(self, x):
+        features = self.dinov3(x)[0]
+
+        # Enforce channels-first output: (B, C, H, W)
+        if features.dim() == 3:
+            b, n, c = features.shape
+            h = int(n ** 0.5)
+            if h * h != n:
+                raise ValueError(f"Token count {n} is not a perfect square.")
+            features = features.permute(0, 2, 1).reshape(b, c, h, h).contiguous()
+        elif features.dim() == 4 and features.shape[-1] > features.shape[1]:
+            features = features.permute(0, 3, 1, 2).contiguous()
+
+        return features.contiguous()
 
 class _GroundEncoder(nn.Module):
     """
@@ -138,9 +283,12 @@ class GroundEncoder(nn.Module):
     """
     Encodes multiple ground-level images into a single BEV feature map.
     """
-    def __init__(self, vit_model_name='vit_base_patch16_224', feature_dim=256):
+    def __init__(self, model_name='vit_base_patch16_224', feature_dim=256, pretrained=True):
         super().__init__()
-        self.feature_extractor = ViTFeatureExtractor(vit_model_name)
+        self.feature_extractor = create_feature_extractor(
+            model_name=model_name,
+            pretrained=pretrained,
+        )
         vit_embed_dim = self.feature_extractor.embed_dim
 
         # MLP to fuse features from multiple views for a single 3D point
@@ -293,14 +441,21 @@ class GroundEncoder(nn.Module):
         # prepare source features as (B, V, P, C_feat)
         src_feats = img_features_2d.view(B, N_views, C_feat, -1).permute(0, 1, 3, 2)
 
-        aggregation_method = 'avg'  # ' avg' or 'max'
+        aggregation_method = 'max'  # ' avg', 'max' or 'avgmax'
         if aggregation_method == 'avg':
-
+            bev_accum_list = []
+            count_list = []
+            
             # Splat views jointly per batch (vectorized over views)
             for b in range(B):
+                bev_accum_b = torch.zeros(C_feat, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
+                count_b = torch.zeros(1, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
+                
                 valid = voxel_valid_mask[b]                       # (V, P)
                 valid_flat = valid.reshape(-1)                    # (V*P,)
                 if valid_flat.sum() == 0:
+                    bev_accum_list.append(bev_accum_b)
+                    count_list.append(count_b)
                     continue
 
                 # gather flattened per-view data for valid locations
@@ -312,83 +467,113 @@ class GroundEncoder(nn.Module):
                 lin_idx_flat = (py_flat * W_feat + px_flat).to(torch.long)  # (N_valid,)
 
                 # accumulate features into flattened BEV grid
-                bev_accum_flat = bev_accum[b].view(C_feat, -1)               # (C_feat, H*W)
-                bev_accum_flat.scatter_add_(1, lin_idx_flat.unsqueeze(0).expand(C_feat, -1), feats_flat.t())
-                bev_accum[b] = bev_accum_flat.view(C_feat, H_feat, W_feat)
+                bev_accum_flat = bev_accum_b.view(C_feat, -1)               # (C_feat, H*W)
+                bev_accum_flat = bev_accum_flat.scatter_add(1, lin_idx_flat.unsqueeze(0).expand(C_feat, -1), feats_flat.t())
+                bev_accum_b = bev_accum_flat.view(C_feat, H_feat, W_feat)
 
                 # accumulate counts
-                count_flat = count[b, 0].view(-1)
+                count_flat = count_b[0].view(-1)
                 ones = torch.ones_like(lin_idx_flat, dtype=count_flat.dtype, device=count_flat.device)
-                count_flat.scatter_add_(0, lin_idx_flat, ones)
-                count[b, 0] = count_flat.view(H_feat, W_feat)
+                count_flat = count_flat.scatter_add(0, lin_idx_flat, ones)
+                count_b[0] = count_flat.view(H_feat, W_feat)
+                
+                bev_accum_list.append(bev_accum_b)
+                count_list.append(count_b)
+
+            # Stack all results
+            bev_accum = torch.stack(bev_accum_list, dim=0)  # (B, C_feat, H_feat, W_feat)
+            count = torch.stack(count_list, dim=0)          # (B, 1, H_feat, W_feat)
 
             # Average features where multiple contributions exist
             
             bev_features = bev_accum / (count + 1e-8)
         elif aggregation_method == 'max':
-            bev_max = torch.full(
-            (B, C_feat, H_feat * W_feat),
-            0.0,
-            device=device,
-            dtype=img_features_2d.dtype
-        )
-
+            bev_max_list = []
+            bev_count_list = []
+            
             for b in range(B):
-                valid = voxel_valid_mask[b].reshape(-1)
-                if valid.sum() == 0:
-                    continue
-
-                feats = src_feats[b].reshape(-1, C_feat)[valid]     # (N_valid, C)
-                lin_idx = voxel_lin_idx[b].reshape(-1)[valid]       # (N_valid,)
-
-                bev_max[b] = bev_max[b].scatter_reduce_( #FIXME: this shit doesn't work due to backpropagation issues
-                    dim=1,
-                    index=lin_idx.unsqueeze(0).expand(C_feat, -1),
-                    src=feats.t(),
-                    reduce="amax",
-                    include_self=True
+                bev_max_b = torch.full(
+                    (C_feat, H_feat * W_feat),
+                    0.0,
+                    device=device,
+                    dtype=img_features_2d.dtype,
                 )
+                bev_count_b = torch.zeros(H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
+                
+                valid = voxel_valid_mask[b].reshape(-1)
+                if valid.sum() > 0:
+                    feats = src_feats[b].reshape(-1, C_feat)[valid]  # (N_valid, C)
+                    lin_idx = voxel_lin_idx[b].reshape(-1)[valid]    # (N_valid,)
+                    ones = torch.ones_like(lin_idx, dtype=bev_count_b.dtype, device=bev_count_b.device)
+                    bev_count_b = bev_count_b.scatter_add(0, lin_idx, ones)
 
+                    bev_max_b = bev_max_b.scatter_reduce(
+                        dim=1,
+                        index=lin_idx.unsqueeze(0).expand(C_feat, -1),
+                        src=feats.t(),
+                        reduce="amax",
+                        include_self=True,
+                    )
+                
+                bev_max_list.append(bev_max_b)
+                bev_count_list.append(bev_count_b)
+
+            bev_max = torch.stack(bev_max_list, dim=0)      # (B, C_feat, H_feat*W_feat)
+            bev_count = torch.stack(bev_count_list, dim=0).unsqueeze(1)  # (B, 1, H_feat*W_feat)
             bev_features = bev_max.view(B, C_feat, H_feat, W_feat)
+            validity_mask = bev_count.view(B, 1, H_feat, W_feat) > 0
 
         elif aggregation_method == "avgmax":
-            bev_sum = torch.zeros(B, C_feat, H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
-            bev_count = torch.zeros(B, 1, H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
-            bev_max = torch.full(   #FIXME: this shit doesn't work due to backpropagation issues
-                (B, C_feat, H_feat * W_feat),
-                0.,
-                device=device,
-                dtype=img_features_2d.dtype
-            )
-
+            # Use a list to collect results to avoid in-place assignment issues
+            bev_sum_list = []
+            bev_count_list = []
+            bev_max_list = []
+            
             for b in range(B):
+                bev_sum_b = torch.zeros(C_feat, H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
+                bev_count_b = torch.zeros(H_feat * W_feat, device=device, dtype=img_features_2d.dtype)
+                bev_max_b = torch.full(
+                    (C_feat, H_feat * W_feat),
+                    0.,
+                    device=device,
+                    dtype=img_features_2d.dtype,
+                )
+                
                 valid = voxel_valid_mask[b].reshape(-1)
-                if valid.sum() == 0:
-                    continue
+                if valid.sum() > 0:
+                    feats = src_feats[b].reshape(-1, C_feat)[valid]     # (N_valid, C)
+                    lin_idx = voxel_lin_idx[b].reshape(-1)[valid]       # (N_valid,)
 
-                feats = src_feats[b].reshape(-1, C_feat)[valid]     # (N_valid, C)
-                lin_idx = voxel_lin_idx[b].reshape(-1)[valid]       # (N_valid,)
+                    # Sum and count for average
+                    bev_sum_b = bev_sum_b.scatter_add(
+                        dim=1,
+                        index=lin_idx.unsqueeze(0).expand(C_feat, -1),
+                        src=feats.t()
+                    )
+                    ones = torch.ones_like(lin_idx, dtype=bev_count_b.dtype, device=bev_count_b.device)
+                    bev_count_b = bev_count_b.scatter_add(0, lin_idx, ones)
 
-                # Sum and count for average
-                bev_sum[b].scatter_add_(
-                    dim=1,
-                    index=lin_idx.unsqueeze(0).expand(C_feat, -1),
-                    src=feats.t()
-                )
-                ones = torch.ones_like(lin_idx, dtype=bev_count.dtype, device=bev_count.device)
-                bev_count[b, 0].scatter_add_(0, lin_idx, ones)
+                    # Max
+                    bev_max_b = bev_max_b.scatter_reduce(
+                        dim=1,
+                        index=lin_idx.unsqueeze(0).expand(C_feat, -1),
+                        src=feats.t(),
+                        reduce="amax",
+                        include_self=True,
+                    )
+                
+                bev_sum_list.append(bev_sum_b)
+                bev_count_list.append(bev_count_b)
+                bev_max_list.append(bev_max_b)
 
-                # Max
-                bev_max[b].scatter_reduce_(
-                    dim=1,
-                    index=lin_idx.unsqueeze(0).expand(C_feat, -1),
-                    src=feats.t(),
-                    reduce="amax",
-                    include_self=True
-                )
+            bev_sum = torch.stack(bev_sum_list, dim=0)      # (B, C_feat, H_feat*W_feat)
+            bev_count = torch.stack(bev_count_list, dim=0)  # (B, H_feat*W_feat)
+            bev_max = torch.stack(bev_max_list, dim=0)      # (B, C_feat, H_feat*W_feat)
 
+            bev_count = bev_count.unsqueeze(1)  # (B, 1, H_feat*W_feat) for broadcasting
             bev_avg = bev_sum / (bev_count + 1e-8)
             bev_features = (bev_avg + bev_max) / 2.0
+            validity_mask = bev_count.view(B, 1, H_feat, W_feat) > 0
         else: 
             raise ValueError(f"Unknown aggregation method: {aggregation_method}")
         
@@ -400,7 +585,8 @@ class GroundEncoder(nn.Module):
         # use projection layer instead of MLP
         #bev_features = self.projection_layer(bev_features_flat.permute(0, 2, 1).view(B, C_feat, H_feat, W_feat))
 
-        validity_mask = count > 0
+        if aggregation_method == 'avg':
+            validity_mask = count > 0
 
         return bev_features, validity_mask
 
@@ -409,9 +595,12 @@ class OverheadEncoder(nn.Module):
     """
     Encodes a single top-down image into a BEV feature map. 
     """
-    def __init__(self, vit_model_name='vit_base_patch16_224', feature_dim=256):
+    def __init__(self, model_name='vit_base_patch16_224', feature_dim=256, pretrained=True):
         super().__init__()
-        self.feature_extractor = ViTFeatureExtractor(vit_model_name)
+        self.feature_extractor = create_feature_extractor(
+            model_name=model_name,
+            pretrained=pretrained,
+        )
         vit_embed_dim = self.feature_extractor.embed_dim
         self.projection = nn.Conv2d(vit_embed_dim, feature_dim, kernel_size=1)
 
@@ -426,8 +615,34 @@ class SnapViT(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.ground_encoder = GroundEncoder(config['vit_model'], config['feature_dim'])
-        self.overhead_encoder = OverheadEncoder(config['vit_model'], config['feature_dim'])
+        # Ground and overhead backbones are intentionally shared.
+        # Prefer model_name, then vit_model for backward compatibility.
+        shared_model_name = config.get('model_name', config.get('vit_model', 'vit_base_patch16_224'))
+
+        # If legacy per-encoder keys are present, enforce they match the shared model.
+        if 'ground_model_name' in config and config['ground_model_name'] != shared_model_name:
+            raise ValueError(
+                "ground_model_name differs from shared model_name/vit_model. "
+                "Ground and overhead must use the same model."
+            )
+        if 'overhead_model_name' in config and config['overhead_model_name'] != shared_model_name:
+            raise ValueError(
+                "overhead_model_name differs from shared model_name/vit_model. "
+                "Ground and overhead must use the same model."
+            )
+
+        pretrained_backbones = config.get('pretrained_backbones', True)
+
+        self.ground_encoder = GroundEncoder(
+            model_name=shared_model_name,
+            feature_dim=config['feature_dim'],
+            pretrained=pretrained_backbones,
+        )
+        self.overhead_encoder = OverheadEncoder(
+            model_name=shared_model_name,
+            feature_dim=config['feature_dim'],
+            pretrained=pretrained_backbones,
+        )
         self.temperature = nn.Parameter(torch.ones([]) * 0.07)
 
     def forward(self, ugv_data, uav_data):
