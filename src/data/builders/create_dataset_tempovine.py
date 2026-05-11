@@ -856,10 +856,23 @@ def build_final_dataset(scenes, drone_data, ugv_temp_rgb, ugv_temp_depth, temp_d
             w2c_matrix = np.linalg.inv(final_rotation).tolist()
 
             ugv_intrinsics = ugv_info['intrinsics']
+            # Store relative paths in metadata to avoid saving full absolute paths
+            try:
+                rel_rgb_dir = os.path.relpath(final_rgb_dir, start=str(output_dir))
+            except Exception:
+                rel_rgb_dir = os.path.basename(final_rgb_dir)
+            try:
+                rel_depth_dir = os.path.relpath(final_depth_dir, start=str(output_dir))
+            except Exception:
+                rel_depth_dir = os.path.basename(final_depth_dir)
+
+            image_rel_path = os.path.join(rel_rgb_dir, ugv_info["name"]) if rel_rgb_dir else ugv_info["name"]
+            depth_rel_path = os.path.join(rel_depth_dir, ugv_info["name"]) if rel_depth_dir else ugv_info["name"]
+
             camera_metadata = {
                 "camera_idx": ugv_info['idx'],
-                "image_path": rgb_dst,
-                "depth_path": depth_dst,
+                "image_path": image_rel_path,
+                "depth_path": depth_rel_path,
                 "camera_intrinsics": ugv_intrinsics.tolist(),
                 "camera_pose_w2c": w2c_matrix,
             }

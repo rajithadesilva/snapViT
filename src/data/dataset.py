@@ -28,8 +28,21 @@ class VineyardDataset(Dataset):
         with open(os.path.join(scene_path, 'metadata.json'), 'r') as f:
             metadata = json.load(f)
 
+        def resolve_path(p):
+            # If absolute path provided, use it. Otherwise try scene-relative, then root_dir-relative.
+            if os.path.isabs(p):
+                return p
+            scene_rel = os.path.join(scene_path, p)
+            if os.path.exists(scene_rel):
+                return scene_rel
+            root_rel = os.path.join(self.root_dir, p)
+            if os.path.exists(root_rel):
+                return root_rel
+            # fallback to scene-relative even if it doesn't exist (so errors are informative)
+            return scene_rel
+
         # 1. Load Overhead UAV Image
-        uav_image_path = os.path.join(scene_path, metadata['uav_image_path'])
+        uav_image_path = resolve_path(metadata['uav_image_path'])
         uav_image = read_image(uav_image_path, mode=ImageReadMode.RGB)
 
         # 2. Select and Load UGV Images
@@ -69,9 +82,9 @@ class VineyardDataset(Dataset):
         
         ugv_images, ugv_depths, ugv_poses, ugv_intrinsics= [], [], [], []
         for view_meta in ugv_metadata_sample:
-            img_path = os.path.join(self.root_dir, view_meta['image_path'])
+            img_path = resolve_path(view_meta['image_path'])
             if self.config.get('use_depth', False) and 'depth_path' in view_meta:
-                depth_path = os.path.join(self.root_dir, view_meta['depth_path'])
+                depth_path = resolve_path(view_meta['depth_path'])
                 ugv_depths.append(read_image(depth_path, mode=ImageReadMode.RGB))
             ugv_images.append(read_image(img_path, mode=ImageReadMode.RGB))
             ugv_poses.append(torch.tensor(view_meta['camera_pose_w2c'], dtype=torch.float32))

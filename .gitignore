@@ -1,6 +1,7 @@
 data/*
 models/
 models*/
+!src/*
 datasets/*
 visualisations/*
 verification/*
