@@ -5,12 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
 from pyproj import Transformer
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
-from datetime import datetime
-import pyrealsense2 as rs
 import rasterio
 import random
 import cv2
@@ -18,12 +15,11 @@ from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rosbags.highlevel import AnyReader
 from rosbags.image import message_to_cvimage
+from rosbags.typesys import Stores, get_typestore
 from collections import deque
 import matplotlib.pyplot as plt
 import json
 import shutil
-from scipy.spatial import distance
-from scipy.interpolate import CubicSpline
 from matplotlib.path import Path as MplPath
 from matplotlib.lines import Line2D
 
@@ -36,6 +32,7 @@ CAMERA_INFO_TOPIC = "/husky/sensors/camera_0/color/camera_info"
 
 CAMERA_TRANSLATION = [-0.4, -0.34, 0.0]
 UGV_HEIGHT = 1.0
+ROS_TYPESTORE = get_typestore(Stores.LATEST)
 
 
 #-----------------------------
@@ -253,6 +250,77 @@ def process_geotiff(
 # Methods for synchronizing UGV data from the rosbag, matching RGB and depth frames,
 #------------------------------
 
+def detect_bag_format(bag_path):
+    """
+    Detect whether the bag_path is a single bag or a directory with multiple sub-bags.
+    
+    Returns:
+        - 'single': bag_path is a single bag file or a directory containing metadata.yaml and one bag file
+        - 'multi': bag_path is a directory containing camera/ and platform/ subfolders
+        - 'unknown': unable to determine format
+    """
+    bag_path = Path(bag_path)
+    
+    if bag_path.is_file() and bag_path.suffix in {'.db3', '.mcap'}:
+        return 'single'
+    
+    if bag_path.is_dir():
+        camera_dir = bag_path / 'camera'
+        platform_dir = bag_path / 'platform'
+        
+        camera_bags = list(camera_dir.glob('*.db3')) if camera_dir.exists() else []
+        platform_bags = list(platform_dir.glob('*.db3')) if platform_dir.exists() else []
+        
+        if camera_bags or platform_bags:
+            return 'multi'
+        
+        metadata_file = bag_path / 'metadata.yaml'
+        if metadata_file.exists():
+            has_mcap = any(bag_path.glob('*.mcap'))
+            has_db3 = any(bag_path.glob('*.db3'))
+            if has_mcap or has_db3:
+                return 'single'
+    
+    return 'unknown'
+
+def get_all_bag_files(bag_path):
+    """
+    Get all bag files from a multi-bag directory structure.
+    
+    Returns:
+        - camera_bags: list of paths to camera/*.db3 files
+        - platform_bags: list of paths to platform/*.db3 files
+    """
+    bag_path = Path(bag_path)
+    
+    camera_dir = bag_path / 'camera'
+    platform_dir = bag_path / 'platform'
+    
+    camera_bags = sorted(camera_dir.glob('*.db3')) if camera_dir.exists() else []
+    platform_bags = sorted(platform_dir.glob('*.db3')) if platform_dir.exists() else []
+    
+    return camera_bags, platform_bags
+
+
+def resolve_single_bag_source(bag_path):
+    """Resolve the entry point to open for a single-bag recording."""
+    bag_path = Path(bag_path)
+
+    if bag_path.is_file():
+        return bag_path
+
+    # Check for actual data files first (metadata.yaml is not a valid rosbag source)
+    mcap_files = sorted(bag_path.glob('*.mcap'))
+    if mcap_files:
+        return mcap_files[0]
+
+    db3_files = sorted(bag_path.glob('*.db3'))
+    if db3_files:
+        return db3_files[0]
+
+    # If no data files found, return the directory (rosbags may handle it)
+    return bag_path
+
 def _find_nearest_msg(msgs, target_timestamp):
     if not msgs:
         return None
@@ -315,12 +383,106 @@ def _sync_msgs(gps_msgs, imu_msgs, camera_info_msgs, depth_msgs, rgb_msgs, msg_c
 
     return ugv_ros_synced_data
 
+def synchronize_ros_data_multi_bag(bag_path=None, gps_topic=None, imu_topic=None, rgb_topic=None, depth_topic=None, camera_info_topic=None):
+    """
+    Synchronize ROS data from a multi-bag setup (camera/ and platform/ subfolders).
+    Camera topics (RGB, depth, camera_info) are in camera/*.db3 files.
+    Platform topics (GPS, IMU) are in platform/*.db3 files.
+    """
+    ugv_ros_synced_data = []
+    
+    print(f"Opening multi-bag structure from: {bag_path}")
+    
+    camera_bags, platform_bags = get_all_bag_files(bag_path)
+    
+    if not camera_bags and not platform_bags:
+        raise ValueError(f"No .db3 files found in camera/ or platform/ subfolders of {bag_path}")
+    
+    print(f"Found {len(camera_bags)} camera bag(s) and {len(platform_bags)} platform bag(s)")
+    
+    # Combine all bags for reading (AnyReader expects Path objects)
+    all_bags = camera_bags + platform_bags
+    
+    print("Opening combined bag files...")
+    with AnyReader(all_bags, default_typestore=ROS_TYPESTORE) as reader:
+        connections = [
+            conn for conn in reader.connections
+            if conn.topic in {gps_topic, imu_topic, rgb_topic, depth_topic, camera_info_topic}
+        ]
+
+        if not connections:
+            raise ValueError(
+                "No matching topics found in the provided bags: "
+                f"{gps_topic}, {imu_topic}, {rgb_topic}, {depth_topic}, {camera_info_topic}"
+            )
+        
+        gps_msgs = deque()
+        imu_msgs = deque()
+        rgb_msgs = deque()
+        depth_msgs = deque()
+        camera_info_msgs = deque()
+
+        msg_count = 0
+
+        for connection, timestamp, rawdata in reader.messages(connections=connections):
+            if connection.topic == gps_topic:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                gps_msgs.append((timestamp, msg))
+            elif connection.topic == imu_topic:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                imu_msgs.append((timestamp, msg))
+            elif connection.topic == rgb_topic:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                rgb_img = message_to_cvimage(msg)
+                rgb_msgs.append((timestamp, rgb_img))
+            elif connection.topic == depth_topic:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                depth_img = message_to_cvimage(msg)
+                depth_msgs.append((timestamp, depth_img))
+            elif connection.topic == camera_info_topic:
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                camera_info_msgs.append((timestamp, msg))
+
+            if msg_count % 50000 == 0 and msg_count > 0:
+                _sync_msgs(gps_msgs, imu_msgs, camera_info_msgs, depth_msgs, rgb_msgs, msg_count, ugv_ros_synced_data)
+            msg_count += 1
+        
+        # Process last batch of messages after loop ends
+        _sync_msgs(gps_msgs, imu_msgs, camera_info_msgs, depth_msgs, rgb_msgs, msg_count, ugv_ros_synced_data)
+        
+    return ugv_ros_synced_data
+
 def synchronize_ros_data(bag_path=None, gps_topic=None, imu_topic=None, rgb_topic=None, depth_topic=None, camera_info_topic=None):
+    """
+    Auto-detect bag format (single or multi-bag) and synchronize ROS data accordingly.
+    """
+    bag_format = detect_bag_format(bag_path)
+    
+    if bag_format == 'unknown':
+        raise ValueError(
+            f"Unable to determine bag format for: {bag_path}\n"
+            f"Expected either a .db3 file or a directory with camera/ and platform/ subfolders."
+        )
+    
+    print(f"Detected bag format: {bag_format}")
+    
+    if bag_format == 'multi':
+        return synchronize_ros_data_multi_bag(
+            bag_path=bag_path,
+            gps_topic=gps_topic,
+            imu_topic=imu_topic,
+            rgb_topic=rgb_topic,
+            depth_topic=depth_topic,
+            camera_info_topic=camera_info_topic
+        )
+    
+    # Single bag format
     ugv_ros_synced_data = []
 
-    print(f"Opening rosbag: {bag_path}")
+    single_bag_source = resolve_single_bag_source(bag_path)
+    print(f"Opening rosbag: {single_bag_source}")
 
-    with AnyReader([bag_path]) as reader:
+    with AnyReader([single_bag_source], default_typestore=ROS_TYPESTORE) as reader:
         connections = {conn.topic: conn for conn in reader.connections}
         
         gps_msgs = deque()
@@ -408,7 +570,6 @@ def unpack_ros_data(ugv_ros_synced_data, ugv_temp_rgb, ugv_temp_depth):
 # Method to calculate rotation matrices from GPS coordinates of synchronized UGV data.
 #-----------------------------
 def calculate_rotation_from_gps(synced_data):
-    rotations = []
     for id in range(len(synced_data) - 1):
         lat1 = synced_data[id]['gps']['lat']
         lon1 = synced_data[id]['gps']['lon']
@@ -426,7 +587,6 @@ def calculate_rotation_from_gps(synced_data):
         bearing = math.atan2(y2 - y1, x2 - x1)
         # Create rotation matrix from bearing (rotation around z-axis)
         rotation_matrix = R.from_euler('z', bearing, degrees=False).as_matrix()
-        rotations.append(rotation_matrix)
 
         synced_data[id]['rotation_matrix'] = rotation_matrix
     
@@ -937,7 +1097,14 @@ def main(args):
     )
 
     print("Opening rosbag and processing UGV data...")
-    with AnyReader([bag_path]) as reader:
+    bag_format = detect_bag_format(bag_path)
+    if bag_format == 'multi':
+        camera_bags, platform_bags = get_all_bag_files(bag_path)
+        debug_sources = camera_bags + platform_bags
+    else:
+        debug_sources = [resolve_single_bag_source(bag_path)]
+
+    with AnyReader(debug_sources, default_typestore=ROS_TYPESTORE) as reader:
         print("Available topics:")
         for conn in reader.connections:
             print(f"- {conn.topic} ({conn.msgtype})")
@@ -1010,7 +1177,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--ortho-path", type=str, default="tempovine/2025_11_19_vineyard_run1/orthophoto.tif", help="Path to drone orthophoto GeoTIFF.")
     parser.add_argument("--ortho-reprojected-path", type=str, default="tempovine/2025_11_19_vineyard_run1/orthophoto_utm32n.tif", help="Path to reprojected orthophoto GeoTIFF (output of reprojection step).")
-    parser.add_argument("--bag-path", type=str, default="tempovine/2025_11_19_vineyard_run1/metadata.yaml", help="Path to Realsense .bag.")
+    parser.add_argument("--bag-path", type=str, default="tempovine/2025_11_19_vineyard_run1/metadata.yaml", help="Path to a bag file or a bag directory.")
     parser.add_argument("--output-dir", type=str, default="tempovine/dataset_tempovine", help="Output directory.")
 
     # Uniform tiling controls
@@ -1023,10 +1190,6 @@ if __name__ == "__main__":
     # Pole row identification and verification
     parser.add_argument("--poles-file", type=str, default=None, help="Path to CSV/TXT file with pole positions and row numbers (optional).")
     parser.add_argument("--verification", action="store_true", help="If set, save a PNG visualization of the trajectory colored by row assignments and poles.")
-
-    #parser.add_argument("--scene_radius", type=float, default=15.0, help="Radius (m) to group ground images to a drone tile.")
-    #parser.add_argument("--frame_skip", type=int, default=10, help="Process every N-th frame from the bag.")
-    #parser.add_argument('--tile_resizing', type=int, default=512, help="Resize UAV images to this size (square).")
 
     args = parser.parse_args()
     main(args)
