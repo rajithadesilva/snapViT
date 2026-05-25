@@ -29,6 +29,7 @@ def create_feature_extractor(model_name='vit_base_patch16_224', pretrained=True,
     """Builds the requested backbone feature extractor.
 
     If model_type is omitted, it is inferred from model_name.
+    upscale_factor: 1 (no upscaling) or 2 (with upscaling neck). Only applies to ResNet, ConvNeXT, Swin.
     """
     model_type = infer_model_type_from_name(model_name) if model_type is None else model_type.lower()
     if model_type == 'vit':
@@ -79,17 +80,27 @@ class ResNetFeatureExtractor(nn.Module):
     """
     def __init__(self, model_name='resnet50', pretrained=True):
         super().__init__()
-        self.resnet = timm.create_model(model_name, pretrained=pretrained)
+        self.resnet = timm.create_model(model_name, pretrained=pretrained, features_only=True, out_indices=(-2,))  # Get the second-to-last feature map for better spatial resolution
         self.resnet.head = nn.Identity()  # Remove the classification head
-        self.embed_dim = self.resnet.num_features
+        self.embed_dim = self.resnet.feature_info[-2]['num_chs']
+        #self.upscale_factor = upscale_factor
+        #self.neck = SmallUpscaleNeck(in_dim=self.embed_dim, 
+        #                             out_dim=self.embed_dim, 
+        #                             hidden_ratio=0.5, 
+        #                             upscale_factor=upscale_factor, 
+        #                             use_upscale=True)
         print(f"Initialized ResNetFeatureExtractor with embed dim {self.embed_dim}")
 
     def forward(self, x):
-        features = self.resnet.forward_features(x)
+        features = self.resnet(x) # Use the second-to-last feature map for better spatial resolution
+        if isinstance(features, (list, tuple)):
+            features = features[0]
+        #if self.upscale_factor > 1:
+        #    features = self.neck(features)
 
         # Enforce channels-first output: (B, C, H, W)
-        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
-            features = features.permute(0, 3, 1, 2).contiguous()
+        #if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+        #    features = features.permute(0, 3, 1, 2).contiguous()
         return features.contiguous()
     
 
@@ -100,17 +111,22 @@ class ConvNeXTFeatureExtractor(nn.Module):
     """
     def __init__(self, model_name='convnext_tiny', pretrained=True):
         super().__init__()
-        self.convnext = timm.create_model(model_name, pretrained=pretrained)
+        self.convnext = timm.create_model(model_name, pretrained=pretrained, features_only=True)
         self.convnext.head = nn.Identity()  # Remove the classification head
-        self.embed_dim = self.convnext.num_features
+        self.embed_dim = self.convnext.feature_info[-2]['num_chs']  # Use the second-to-last feature map's channels for better spatial resolution
+        #self.upscale_factor = upscale_factor
         print(f"Initialized ConvNeXTFeatureExtractor with embed dim {self.embed_dim}")
 
     def forward(self, x):
-        features = self.convnext.forward_features(x)
+        features = self.convnext.forward(x)[-2]  # Use the second-to-last feature map for better spatial resolution
+        if isinstance(features, (list, tuple)):
+            features = features[0]
+        #if self.upscale_factor > 1:
+        #    features = self.neck(features)
 
         # Enforce channels-first output: (B, C, H, W)
-        if features.dim() == 4 and features.shape[-1] > features.shape[1]:
-            features = features.permute(0, 3, 1, 2).contiguous()
+        #if features.dim() == 4 and features.shape[-1] > features.shape[1]:
+        #    features = features.permute(0, 3, 1, 2).contiguous()
         return features.contiguous()
     
 class SwintTFeatureExtractor(nn.Module):
@@ -123,14 +139,16 @@ class SwintTFeatureExtractor(nn.Module):
         self.swin = timm.create_model(
             model_name,
             pretrained=pretrained,
-            features_only=True,
-            out_indices=(3,),
+            features_only=True
         )
-        self.embed_dim = self.swin.feature_info.channels()[-1]
+        self.embed_dim = self.swin.feature_info.channels()[-2]  # Use the second-to-last feature map's channels for better spatial resolution
+        #self.upscale_factor = upscale_factor
         print(f"Initialized SwintTFeatureExtractor with embed dim {self.embed_dim}")
 
     def forward(self, x):
-        features = self.swin(x)[0]
+        features = self.swin(x)[-2]  # Use the second-to-last feature map for better spatial resolution
+        #if self.upscale_factor > 1:
+        #    features = self.neck(features)
 
         # Enforce channels-first output: (B, C, H, W)
         if features.dim() == 4 and features.shape[-1] > features.shape[1]:
@@ -168,116 +186,6 @@ class Dinov3FeatureExtractor(nn.Module):
             features = features.permute(0, 3, 1, 2).contiguous()
 
         return features.contiguous()
-
-class _GroundEncoder(nn.Module):
-    """
-    Encodes multiple ground-level images into a single BEV feature map.
-    """
-    def __init__(self, vit_model_name='vit_base_patch16_224', feature_dim=256):
-        super().__init__()
-        self.feature_extractor = ViTFeatureExtractor(vit_model_name)
-        vit_embed_dim = self.feature_extractor.embed_dim
-
-        # MLP to fuse features from multiple views for a single 3D point
-        self.fusion_mlp = nn.Sequential(
-            nn.Linear(vit_embed_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, feature_dim)
-        )
-        
-        self.vertical_pool = nn.AdaptiveMaxPool1d(1)
-
-    def project_points(self, points_3d, poses_w2c, intrinsics):
-        """
-        Projects 3D points from world coordinates into 2D image coordinates.
-        Args:
-            points_3d (Tensor): (B, X, Y, Z, 3)
-            poses_w2c (Tensor): World-to-camera poses (B, N_views, 4, 4)
-            intrinsics (Tensor): Camera intrinsics (B, N_views, 3, 3)
-        Returns:
-            projected_coords (Tensor): Normalized 2D coordinates for sampling (B, N_views, X*Y*Z, 2)
-            visibility_mask (Tensor): Mask of points visible in each view (B, N_views, X*Y*Z)
-        """
-        B, N_views, _, _ = poses_w2c.shape
-        _, X, Y, Z, _ = points_3d.shape
-        
-        points_flat = points_3d.reshape(B, -1, 3) # (B, P, 3) where P = X*Y*Z
-        points_hom = F.pad(points_flat, (0, 1), value=1.0) # (B, P, 4)
-        
-        # Transform points to camera coordinates
-        points_cam = torch.einsum('bvij,bpj->bvpi', poses_w2c, points_hom) # (B, N_views, P, 4)
-        
-        # Project points to image plane
-        points_img = torch.einsum('bvij,bvpj->bvpi', intrinsics, points_cam[..., :3]) # (B, N_views, P, 3)
-        
-        depth = points_img[..., 2]
-        
-        # Normalize to get pixel coordinates
-        # Add epsilon to prevent division by zero
-        projected_coords_2d = points_img[..., :2] / (depth.unsqueeze(-1) + 1e-8)
-        
-        # Create visibility mask (points must be in front of the camera)
-        visibility_mask = depth > 0
-
-        # Normalize coordinates to [-1, 1] for grid_sample
-        # Assuming image dimensions are known (e.g., 224x224)
-        img_w, img_h = 224, 224
-        projected_coords_normalized = projected_coords_2d.clone()
-        projected_coords_normalized[..., 0] = (projected_coords_normalized[..., 0] / (img_w - 1)) * 2 - 1
-        projected_coords_normalized[..., 1] = (projected_coords_normalized[..., 1] / (img_h - 1)) * 2 - 1
-        
-        return projected_coords_normalized.view(B, N_views, -1, 2), visibility_mask.view(B, N_views, -1)
-
-    def forward(self, ugv_images, ugv_depths, camera_poses, intrinsics, grid_points_3d):
-        B, N_views, C_img, H_img, W_img = ugv_images.shape
-        _, X, Y, Z, _ = grid_points_3d.shape
-
-        # 1. Extract 2D features for all views
-        img_features_2d = self.feature_extractor(ugv_images.reshape(B * N_views, C_img, H_img, W_img))
-        _, C_feat, H_feat, W_feat = img_features_2d.shape
-        img_features_2d = img_features_2d.view(B, N_views, C_feat, H_feat, W_feat)
-
-        # 2. Project 3D grid points into each camera view
-        coords, mask = self.project_points(grid_points_3d, camera_poses, intrinsics) # coords: (B, V, P, 2), mask: (B, V, P)
-
-        # 3. Sample features
-        sampled_features = F.grid_sample(
-            img_features_2d.reshape(B * N_views, C_feat, H_feat, W_feat),
-            coords.reshape(B * N_views, 1, -1, 2), # Reshape for grid_sample
-            mode='bilinear',
-            padding_mode='zeros',
-            align_corners=True
-        )
-        sampled_features = sampled_features.view(B, N_views, C_feat, -1)
-        
-        # Apply visibility mask
-        sampled_features = sampled_features * mask.unsqueeze(2)
-
-        # 4. Fuse features across views (simple mean for now)
-        # Summing and dividing by the mask sum avoids division by zero for non-visible points
-        fused_features = sampled_features.sum(dim=1) / (mask.sum(dim=1).unsqueeze(1) + 1e-8) # (B, C_feat, P)
-        
-        # 5. Pass through MLP
-        fused_features = fused_features.permute(0, 2, 1) # (B, P, C_feat)
-        feature_volume_flat = self.fusion_mlp(fused_features) # (B, P, C_out)
-        
-        # 6. Reshape and collapse to BEV
-        C_out = feature_volume_flat.shape[-1]
-        feature_volume_3d = feature_volume_flat.permute(0, 2, 1).reshape(B, C_out, X, Y, Z)
-        
-        # Reshape for vertical pooling
-        B, C_out, Y_dim, X_dim, Z_dim = feature_volume_3d.shape
-        # Permute and reshape to (B*Y*X, C, Z) to apply 1D pooling on the Z dimension
-        feature_volume_reshaped = feature_volume_3d.permute(0, 2, 3, 1, 4).reshape(-1, C_out, Z_dim)
-
-        # Apply vertical pooling
-        bev_features_flat = self.vertical_pool(feature_volume_reshaped).squeeze(-1)
-
-        # Reshape back to a 4D BEV map (B, C, Y, X)
-        bev_features = bev_features_flat.reshape(B, Y_dim, X_dim, C_out).permute(0, 3, 1, 2).contiguous()
-
-        return bev_features
-
 
 class GroundEncoder(nn.Module):
     """
@@ -441,7 +349,7 @@ class GroundEncoder(nn.Module):
         # prepare source features as (B, V, P, C_feat)
         src_feats = img_features_2d.view(B, N_views, C_feat, -1).permute(0, 1, 3, 2)
 
-        aggregation_method = 'max'  # ' avg', 'max' or 'avgmax'
+        aggregation_method = 'avg'  # ' avg', 'max' or 'avgmax'
         if aggregation_method == 'avg':
             bev_accum_list = []
             count_list = []
