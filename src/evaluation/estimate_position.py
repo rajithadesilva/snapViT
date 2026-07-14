@@ -1,5 +1,8 @@
 import argparse
+import json
 import os
+from pathlib import Path
+import re
 from typing import Tuple
 
 import matplotlib.pyplot as plt
@@ -9,14 +12,20 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
+import sys
 
-from dataset import VineyardDataset
-from model import SnapViT
-from visualize_dataset_samples import visualize_data
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from data.dataset import VineyardDataset
+from models.snapvit import SnapViT
+from visualization.visualize_dataset_samples import visualize_data
 
 
 CONFIG = {
 	"vit_model": "vit_small_patch16_224",
+	"model_name": "vit_small_patch16_224",
 	"train_img_size": (224, 224),
 	"feature_dim": 128,
 	"num_ugv_views": 1,
@@ -28,7 +37,42 @@ CONFIG = {
 	"depth_range": (0.0, 5.0),
 	"ground_tile_size": 10.0,
 	"consecutive_frames": False,
+	"edge_margin_m": 2.5,
 }
+
+
+def load_checkpoint_config(checkpoint_path: str) -> dict:
+	"""Load a config.json stored next to a checkpoint, if available."""
+	checkpoint = Path(checkpoint_path).resolve()
+	candidates = [
+		checkpoint.with_name("config.json"),
+		checkpoint.parent / "config.json",
+		checkpoint.parent.parent / "config.json",
+	]
+
+	for candidate in candidates:
+		if candidate.exists():
+			with open(candidate, "r", encoding="utf-8") as f:
+				return json.load(f)
+
+	return {}
+
+
+def infer_model_config_from_checkpoint(checkpoint_path: str) -> tuple[str | None, int | None]:
+	"""Infer backbone name and feature dimension from a checkpoint path."""
+	path_text = Path(checkpoint_path).as_posix().lower()
+	backbone = None
+	for candidate in ("resnet50", "convnext_base", "convnext_tiny", "swin_base_patch4_window7_224", "swin_small_patch4_window7_224", "vit_base_patch16_224", "vit_small_patch16_224"):
+		if candidate in path_text:
+			backbone = candidate
+			break
+
+	feature_dim = None
+	match = re.search(r"(?:exp_\d+_)?[a-z0-9+]+_(\d+)_", path_text)
+	if match is not None:
+		feature_dim = int(match.group(1))
+
+	return backbone, feature_dim
 
 
 def parse_angle_list(angle_str: str) -> list[float]:
@@ -188,6 +232,7 @@ def evaluate_pose_grid(
 			pose_scores[iy, ix] = best_score.float()
 			best_yaw_idx[iy, ix] = best_angle_idx
 
+
 	flat_best_idx = int(pose_scores.argmax().item())
 	best_iy = flat_best_idx // grid_w
 	best_ix = flat_best_idx % grid_w
@@ -318,6 +363,16 @@ def render_scene(
 		)
 		pred_xy.append((x_px, y_px, float(vals[j].item())))
 
+	# Compute top-1 distance (meters) to the original/base position
+	distance_top1_m = None
+	if k > 0:
+		best_flat_idx = int(idxs[0].item())
+		best_iy = best_flat_idx // grid_w
+		best_ix = best_flat_idx % grid_w
+		best_local_x_m = float(poses[best_iy, best_ix, 0].item())
+		best_local_y_m = float(poses[best_iy, best_ix, 1].item())
+		distance_top1_m = float(np.hypot(best_local_x_m - base_x_m, best_local_y_m - base_y_m))
+
 	gt_x, gt_y, dir_x, dir_y = gt_xy_dir
 
 	fig = plt.figure(figsize=(20, 5))
@@ -346,13 +401,21 @@ def render_scene(
 	ax1.imshow(uav_img)
 	ax1.axis("off")
 
-	ax2.set_title("Cosine Similarity + Top-k points", fontsize=title_fs)
+	# Include top-1 distance in the title above the third plot when available
+	if distance_top1_m is not None:
+		ax2.set_title(f"Cosine Similarity + Top-k points\nTop-1 dist: {distance_top1_m:.2f} m", fontsize=title_fs)
+	else:
+		ax2.set_title("Cosine Similarity + Top-k points", fontsize=title_fs)
 	ax2.imshow(uav_img, alpha=0.4)
 	sim_up_inverse_y = np.flipud(sim_up)
 	hm = ax2.imshow(sim_up_inverse_y, cmap="plasma", alpha=0.6, vmin=0.0, vmax=1.0)
 	for i, (x_px, y_px, p) in enumerate(pred_xy):
 		label = "Top-k candidates" if i == 0 else None
-		ax2.scatter([x_px], [y_px], s=30, c="white", edgecolors="black", linewidths=1.0, label=label)
+		# Draw top-1 as a green circle, others as white
+		if i == 0:
+			ax2.scatter([x_px], [y_px], s=60, c="green", edgecolors="black", linewidths=1.5, label="Top-1")
+		else:
+			ax2.scatter([x_px], [y_px], s=30, c="white", edgecolors="black", linewidths=1.0, label=label)
 		#ax2.text(x_px + 3, y_px - 3, f"#{i+1} ({p:.2f})", color="white", fontsize=8)
 
 	# Ground-truth position and GT orientation arrow.
@@ -466,10 +529,27 @@ def main(args: argparse.Namespace) -> None:
 	if len(dataset) == 0:
 		raise ValueError(f"No scenes found in {args.data_root}")
 
+	checkpoint_config = load_checkpoint_config(args.checkpoint)
+	if checkpoint_config:
+		checkpoint_model_name = checkpoint_config.get("model_name", checkpoint_config.get("vit_model"))
+		if checkpoint_model_name is not None:
+			CONFIG["vit_model"] = checkpoint_model_name
+			CONFIG["model_name"] = checkpoint_model_name
+		if "feature_dim" in checkpoint_config:
+			CONFIG["feature_dim"] = int(checkpoint_config["feature_dim"])
+
+	checkpoint_model_name, checkpoint_feature_dim = infer_model_config_from_checkpoint(args.checkpoint)
+	if checkpoint_model_name is not None and not checkpoint_config:
+		CONFIG["vit_model"] = checkpoint_model_name
+		CONFIG["model_name"] = checkpoint_model_name
+	if checkpoint_feature_dim is not None and "feature_dim" not in checkpoint_config:
+		CONFIG["feature_dim"] = checkpoint_feature_dim
+
 	model = SnapViT(CONFIG).to(CONFIG["device"])
 	if not os.path.exists(args.checkpoint):
 		raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
-	model.load_state_dict(torch.load(args.checkpoint, map_location=CONFIG["device"]))
+	state_dict = torch.load(args.checkpoint, map_location=CONFIG["device"])
+	model.load_state_dict(state_dict)
 	model.eval()
 
 	dataloader = DataLoader(dataset, batch_size=CONFIG["batch_size"], shuffle=True, num_workers=args.num_workers)

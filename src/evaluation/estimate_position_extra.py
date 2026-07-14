@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 from typing import Tuple
 
 import matplotlib.pyplot as plt
@@ -9,10 +10,15 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
+import sys
 
-from dataset import VineyardDataset
-from model import SnapViT
-from visualize_dataset_samples import visualize_data
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from data.dataset import VineyardDataset
+from models.snapvit import SnapViT
+from visualization.visualize_dataset_samples import visualize_data
 
 
 CONFIG = {
