@@ -14,23 +14,14 @@ import csv
 import json
 import copy
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
-from tqdm import tqdm
 from datetime import datetime
 import itertools
+from pathlib import Path
 
 # Add src directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from models.snapvit import SnapViT
-from data.dataset import VineyardDataset
-from train_loop import (
-    info_nce_loss,
-    masked_info_nce_loss,
-    symmetric_info_nce_loss_masked
-)
+from src.training.train_loop import build_dataloaders, train_loop
 
 
 class AblationConfig:
@@ -44,6 +35,8 @@ class AblationConfig:
         'grid_size': (34, 34, 8),
         'grid_resolution': 0.3,
         'batch_size': 8,
+        'num_workers': 8,
+        'pin_memory': True,
         'learning_rate': 1e-4,
         'epochs': 50,  # Reduced for ablation study
         'device': 'cuda:0',
@@ -200,7 +193,7 @@ class AblationStudy:
         self._save_ablation_config_snapshot()
         
         # Setup data loaders (shared across all experiments)
-        self.train_dataloader, self.val_dataloader = self._setup_dataloaders()
+        self.train_dataloader, self.val_dataloader = build_dataloaders(self.base_config, seed=42)
 
     def _save_ablation_config_snapshot(self):
         """Save merged and validated ablation config used for this run."""
@@ -232,55 +225,6 @@ class AblationStudy:
         with open(self.results_csv, 'w', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=headers)
             writer.writeheader()
-    
-    def _setup_dataloaders(self):
-        """Setup data loaders once and reuse"""
-        print("Loading dataset...")
-        
-        image_transforms = transforms.Compose([
-            transforms.Resize(self.base_config['train_img_size'], antialias=True),
-            transforms.ConvertImageDtype(torch.float),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        
-        depth_transforms = transforms.Compose([
-            transforms.Resize(self.base_config['train_img_size'], antialias=True),
-            transforms.ConvertImageDtype(torch.float),
-        ])
-        
-        full_dataset = VineyardDataset(
-            root_dir=self.base_config['data_root'],
-            config=self.base_config,
-            transforms=image_transforms,
-            depth_transforms=depth_transforms,
-            consecutive_frames=self.base_config['consecutive_frames']
-        )
-        
-        if len(full_dataset) == 0:
-            raise ValueError("Dataset is empty. Please check the data_root path.")
-        
-        val_size = int(self.base_config['val_split_ratio'] * len(full_dataset))
-        train_size = len(full_dataset) - val_size
-        
-        print(f"Dataset size: {len(full_dataset)}. Splitting into {train_size} training and {val_size} validation samples.")
-        
-        generator = torch.Generator().manual_seed(42)  # Fixed seed for reproducibility
-        train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=generator)
-        
-        train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=self.base_config['batch_size'],
-            shuffle=True,
-            num_workers=8
-        )
-        val_dataloader = DataLoader(
-            val_dataset,
-            batch_size=self.base_config['batch_size'],
-            shuffle=False,
-            num_workers=8
-        )
-        
-        return train_dataloader, val_dataloader
     
     def generate_experiments(self):
         """Generate all experiment configurations"""
@@ -340,181 +284,30 @@ class AblationStudy:
         print(f"{'='*80}")
         
         start_time = datetime.now()
-        
-        # Create and load model
         try:
-            model = SnapViT(config).to(config['device'])
-        except Exception as e:
-            print(f"Error creating model: {e}")
-            return None
-        
-        optimizer = torch.optim.Adam(model.parameters(), lr=config['learning_rate'])
-        best_val_loss = float('inf')
-        
-        # Create output directory
-        os.makedirs(config['output_model_path'], exist_ok=True)
-        
-        # Save config
-        config_path = os.path.join(config['output_model_path'], 'config.json')
-        config_copy = config.copy()
-        config_copy['device'] = str(config_copy['device'])  # Convert device to string for JSON
-        with open(config_path, 'w') as f:
-            json.dump(config_copy, f, indent=2)
-        
-        # Training loop
-        for epoch in range(config['epochs']):
-            # Training phase
-            model.train()
-            total_train_loss = 0.0
-            total_pixel_loss = 0.0
-            total_global_loss = 0.0
-            
-            train_pbar = tqdm(self.train_dataloader, desc=f"Epoch {epoch+1}/{config['epochs']} [Train]", leave=False)
-            for batch in train_pbar:
-                optimizer.zero_grad()
-                
-                try:
-                    uav_data = {k: v.to(config['device']) for k, v in batch['uav_data'].items()}
-                    ugv_data = {k: v.to(config['device']) for k, v in batch['ugv_data'].items()}
-                    
-                    ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
-                    overhead_bev_resized = F.interpolate(
-                        overhead_bev,
-                        size=ground_bev.shape[2:],
-                        mode='bilinear',
-                        align_corners=False
-                    )
-                    
-                    # Compute losses based on configuration
-                    pixel_loss = 0.0
-                    global_loss = 0.0
-                    
-                    if config['use_pixel_loss']:
-                        pixel_loss = masked_info_nce_loss(
-                            ground_bev, overhead_bev_resized, ground_validity, model.temperature
-                        )
-                    
-                    if config['use_global_loss']:
-                        global_loss = symmetric_info_nce_loss_masked(
-                            ground_bev, overhead_bev_resized, ground_validity, model.temperature
-                        )
-                    
-                    # Combine losses
-                    if epoch < config['mixed_loss_delay']:
-                        loss = global_loss if config['use_global_loss'] else pixel_loss
-                    else:
-                        if config['use_pixel_loss'] and config['use_global_loss']:
-                            loss = (config['pixel_loss_weight'] * pixel_loss +
-                                   (1 - config['pixel_loss_weight']) * global_loss)
-                        elif config['use_pixel_loss']:
-                            loss = pixel_loss
-                        else:
-                            loss = global_loss
-                    
-                    loss.backward()
-                    optimizer.step()
-                    
-                    total_train_loss += loss.item()
-                    total_pixel_loss += float(pixel_loss) if config['use_pixel_loss'] else 0.0
-                    total_global_loss += float(global_loss) if config['use_global_loss'] else 0.0
-                    
-                    train_pbar.set_postfix({'loss': loss.item()})
-                    
-                except Exception as e:
-                    print(f"Error during training batch: {e}")
-                    return None
-            
-            avg_train_loss = total_train_loss / len(self.train_dataloader)
-            avg_pixel_loss = total_pixel_loss / len(self.train_dataloader)
-            avg_global_loss = total_global_loss / len(self.train_dataloader)
-            
-            # Validation phase
-            model.eval()
-            total_val_loss = 0.0
-            total_val_pixel_loss = 0.0
-            total_val_global_loss = 0.0
-            
-            val_pbar = tqdm(self.val_dataloader, desc=f"Epoch {epoch+1}/{config['epochs']} [Val]", leave=False)
-            with torch.no_grad():
-                for batch in val_pbar:
-                    try:
-                        uav_data = {k: v.to(config['device']) for k, v in batch['uav_data'].items()}
-                        ugv_data = {k: v.to(config['device']) for k, v in batch['ugv_data'].items()}
-                        
-                        ground_bev, overhead_bev, ground_validity = model(ugv_data, uav_data)
-                        overhead_bev_resized = F.interpolate(
-                            overhead_bev,
-                            size=ground_bev.shape[2:],
-                            mode='bilinear',
-                            align_corners=False
-                        )
-                        
-                        pixel_loss = 0.0
-                        global_loss = 0.0
-                        
-                        if config['use_pixel_loss']:
-                            pixel_loss = masked_info_nce_loss(
-                                ground_bev, overhead_bev_resized, ground_validity, model.temperature
-                            )
-                        
-                        if config['use_global_loss']:
-                            global_loss = symmetric_info_nce_loss_masked(
-                                ground_bev, overhead_bev_resized, ground_validity, model.temperature
-                            )
-                        
-                        if epoch < config['mixed_loss_delay']:
-                            loss = global_loss if config['use_global_loss'] else pixel_loss
-                        else:
-                            if config['use_pixel_loss'] and config['use_global_loss']:
-                                loss = (config['pixel_loss_weight'] * pixel_loss +
-                                       (1 - config['pixel_loss_weight']) * global_loss)
-                            elif config['use_pixel_loss']:
-                                loss = pixel_loss
-                            else:
-                                loss = global_loss
-                        
-                        total_val_loss += loss.item()
-                        total_val_pixel_loss += float(pixel_loss) if config['use_pixel_loss'] else 0.0
-                        total_val_global_loss += float(global_loss) if config['use_global_loss'] else 0.0
-                        
-                        val_pbar.set_postfix({'loss': loss.item()})
-                        
-                    except Exception as e:
-                        print(f"Error during validation batch: {e}")
-                        return None
-            
-            avg_val_loss = total_val_loss / len(self.val_dataloader)
-            avg_val_pixel_loss = total_val_pixel_loss / len(self.val_dataloader)
-            avg_val_global_loss = total_val_global_loss / len(self.val_dataloader)
-            
-            # Track best model
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                # Save best model
-                best_model_path = os.path.join(config['output_model_path'], 'best_model.pth')
-                torch.save(model.state_dict(), best_model_path)
-            
-            # Save results to CSV
-            self._save_epoch_result(
-                exp_id, config, epoch,
-                avg_train_loss, avg_pixel_loss, avg_global_loss,
-                avg_val_loss, avg_val_pixel_loss, avg_val_global_loss,
-                best_val_loss,
-                (datetime.now() - start_time).total_seconds()
+            train_result = train_loop(
+                config,
+                self.train_dataloader,
+                self.val_dataloader,
+                save_history=False,
+                writer_log_dir=os.path.join(self.output_dir, 'tensorboard', f'exp_{exp_id:04d}')
             )
-        
-        # Final model save
-        final_model_path = os.path.join(config['output_model_path'], 'final_model.pth')
-        torch.save(model.state_dict(), final_model_path)
-        
+        except Exception as e:
+            print(f"Error while training experiment {exp_id}: {e}")
+            return None
+
+        training_time = (datetime.now() - start_time).total_seconds()
+
+        for record in train_result['history']:
+            self._save_epoch_result(exp_id, config, record)
+
         return {
             'exp_id': exp_id,
-            'best_val_loss': best_val_loss,
-            'training_time': (datetime.now() - start_time).total_seconds()
+            'best_val_loss': train_result['best_val_loss'],
+            'training_time': training_time
         }
     
-    def _save_epoch_result(self, exp_id, config, epoch, train_loss, pixel_loss, global_loss,
-                          val_loss, val_pixel_loss, val_global_loss, best_val_loss, training_time):
+    def _save_epoch_result(self, exp_id, config, record):
         """Save epoch results to CSV"""
         with open(self.results_csv, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -530,16 +323,16 @@ class AblationStudy:
                 'pixel_loss_weight': config['pixel_loss_weight'],
                 'mixed_loss_delay': config['mixed_loss_delay'],
                 'loss_type': config['loss_type'],
-                'epoch': epoch + 1,
-                'train_loss': f"{train_loss:.6f}",
-                'train_pixel_loss': f"{pixel_loss:.6f}",
-                'train_global_loss': f"{global_loss:.6f}",
-                'val_loss': f"{val_loss:.6f}",
-                'val_pixel_loss': f"{val_pixel_loss:.6f}",
-                'val_global_loss': f"{val_global_loss:.6f}",
-                'best_val_loss': f"{best_val_loss:.6f}",
-                'training_time_sec': f"{training_time:.2f}",
-                'timestamp': datetime.now().isoformat()
+                'epoch': record['epoch'],
+                'train_loss': f"{record['train_loss']:.6f}",
+                'train_pixel_loss': f"{record['train_pixel_loss']:.6f}",
+                'train_global_loss': f"{record['train_global_loss']:.6f}",
+                'val_loss': f"{record['val_loss']:.6f}",
+                'val_pixel_loss': f"{record['val_pixel_loss']:.6f}",
+                'val_global_loss': f"{record['val_global_loss']:.6f}",
+                'best_val_loss': f"{record['best_val_loss']:.6f}",
+                'training_time_sec': f"{record['training_time_sec']:.2f}",
+                'timestamp': record['timestamp']
             })
     
     def run(self):
