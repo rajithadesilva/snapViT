@@ -9,7 +9,8 @@ from torchvision import transforms
 
 class VineyardDataset(Dataset):
     def __init__(self, root_dir, config, transforms=None, depth_transforms=None, consecutive_frames=False):
-        self.root_dir = root_dir
+        self.root_dirs = self._normalize_root_dirs(root_dir)
+        self.root_dir = self.root_dirs[0]
         self.config = config
         self.transforms = transforms
         self.depth_transforms = depth_transforms
@@ -17,8 +18,39 @@ class VineyardDataset(Dataset):
         self.ground_tile_size = self.config.get('ground_tile_size', 10.0)
         self.edge_margin_m = float(self.config.get('edge_margin_m', 1.0))
         self.consecutive_frames = consecutive_frames
-        all_scene_folders = [os.path.join(root_dir, d) for d in sorted(os.listdir(root_dir)) if os.path.isdir(os.path.join(root_dir, d)) and (not 'ugv_rgb' in d and not 'ugv_depth' in d and not 'temp' in d)]
+        all_scene_folders = self._collect_scene_folders(self.root_dirs)
         self.scene_folders = self._filter_scene_folders(all_scene_folders)
+
+    def _normalize_root_dirs(self, root_dir):
+        if isinstance(root_dir, (str, os.PathLike)):
+            root_dirs = [os.fspath(root_dir)]
+        else:
+            try:
+                root_dirs = [os.fspath(path) for path in root_dir]
+            except TypeError as exc:
+                raise TypeError("root_dir must be a path or an iterable of paths") from exc
+
+        if not root_dirs:
+            raise ValueError("root_dir must contain at least one dataset folder")
+
+        return root_dirs
+
+    def _collect_scene_folders(self, root_dirs):
+        scene_folders = []
+
+        for root_dir in root_dirs:
+            if not os.path.isdir(root_dir):
+                raise FileNotFoundError(f"Dataset root not found: {root_dir}")
+
+            for entry_name in sorted(os.listdir(root_dir)):
+                entry_path = os.path.join(root_dir, entry_name)
+                if not os.path.isdir(entry_path):
+                    continue
+                if 'ugv_rgb' in entry_name or 'ugv_depth' in entry_name or 'temp' in entry_name:
+                    continue
+                scene_folders.append(entry_path)
+
+        return list(dict.fromkeys(scene_folders))
 
     def __len__(self):
         return len(self.scene_folders)
@@ -35,9 +67,10 @@ class VineyardDataset(Dataset):
             scene_rel = os.path.join(scene_path, p)
             if os.path.exists(scene_rel):
                 return scene_rel
-            root_rel = os.path.join(self.root_dir, p)
-            if os.path.exists(root_rel):
-                return root_rel
+            for root_dir in self.root_dirs:
+                root_rel = os.path.join(root_dir, p)
+                if os.path.exists(root_rel):
+                    return root_rel
             # fallback to scene-relative even if it doesn't exist (so errors are informative)
             return scene_rel
 
