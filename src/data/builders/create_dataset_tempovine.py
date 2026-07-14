@@ -938,7 +938,7 @@ def build_final_dataset(scenes, drone_data, ugv_temp_rgb, ugv_temp_depth, temp_d
                 all_positions = np.array([entry["pos_xy"] for entry in all_ugv_entries], dtype=float)
                 row_assignments = assign_points_to_row_regions(all_positions, corridor_model)
                 for (drone_idx, entry_idx), row_id in zip(all_ugv_indices, row_assignments):
-                    scenes[drone_idx][entry_idx]["row_number"] = int(row_id)
+                    scenes[drone_idx][entry_idx]["row_id"] = int(row_id)
 
     scene_count = 0
     for drone_idx, ugv_entries in tqdm(scenes.items()):
@@ -1142,7 +1142,7 @@ def main(args):
                 all_positions = np.array([entry["pos_xy"] for entry in ugv_synced_data], dtype=float)
                 row_assignments = assign_points_to_row_regions(all_positions, corridor_model)
                 for entry, row_id in zip(ugv_synced_data, row_assignments):
-                    entry["row_number"] = int(row_id)
+                    entry["row_id"] = int(row_id)
                 viz_output = os.path.join(output_dir, "verification_trajectory.png")
                 create_verification_visualization(
                     orthophoto_reprojected_path,
