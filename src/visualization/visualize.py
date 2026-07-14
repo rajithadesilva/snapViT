@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 import argparse
+from pathlib import Path
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import DataLoader
@@ -11,11 +12,16 @@ from tqdm import tqdm
 import shutil
 import json
 import matplotlib.pyplot as plt
+import sys
+
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # Import necessary classes from your project files
-from model import SnapViT
-from dataset import VineyardDataset
-from visualize_dataset_samples import visualize_data
+from models.snapvit import SnapViT
+from data.dataset import VineyardDataset
+from visualization.visualize_dataset_samples import visualize_data
 
 # --- Configuration (should match training script) ---
 CONFIG = {

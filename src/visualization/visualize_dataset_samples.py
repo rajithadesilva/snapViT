@@ -2,13 +2,19 @@ import argparse
 import torch
 import os
 import numpy as np
+from pathlib import Path
 from torchvision import transforms
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
+import sys
 
-from dataset import VineyardDataset
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from data.dataset import VineyardDataset
 from matplotlib.patches import Circle, FancyArrow
 # --- Configuration ---
 CONFIG = {

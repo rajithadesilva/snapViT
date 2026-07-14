@@ -2,11 +2,17 @@ import os
 import torch
 import numpy as np
 import argparse
+from pathlib import Path
 from torch.utils.data import DataLoader
 import plotly.graph_objects as go
+import sys
+
+SRC_DIR = Path(__file__).resolve().parents[1]
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # Import necessary classes from your project files
-from dataset import VineyardDataset
+from data.dataset import VineyardDataset
 
 # --- Configuration (should match training script for consistency) ---
 CONFIG = {
