@@ -1,0 +1,39 @@
+{
+  "base_config": {
+    "data_root": "/media/data/alessandro/GAIA/tempovine/dataset_tempovine_train1",
+    "train_img_size": [224, 224],
+    "num_ugv_views": 8,
+    "grid_size": [34, 34, 8],
+    "grid_resolution": 0.3,
+    "batch_size": 8,
+    "learning_rate": 0.0001,
+    "epochs": 50,
+    "device": "cuda:0",
+    "val_split_ratio": 0.2,
+    "use_depth": true,
+    "depth_range": [0.0, 5.0],
+    "ground_tile_size": 10.0,
+    "consecutive_frames": true,
+    "pretrained_backbones": true
+  },
+  "models": [
+    "vit_small_patch16_224",
+    "vit_base_patch16_224",
+    "resnet50",
+    "resnet50+Neck",
+    "convnext_tiny",
+    "convnext_tiny+Neck",
+    "swin_small_patch4_window7_224",
+    "swin_small_patch4_window7_224+Neck"
+  ],
+  "feature_dims": [256],
+  "pixel_loss_weights": [0.5],
+  "mixed_loss_delays": [0],
+  "loss_combinations": [
+    {
+      "pixel": true,
+      "global": true,
+      "name": "both"
+    }
+  ]
+}
