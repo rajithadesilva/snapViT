@@ -210,16 +210,68 @@ class GroundEncoder(nn.Module):
 
         self.projection_layer = nn.Conv2d(vit_embed_dim, feature_dim, kernel_size=1)
 
-    def forward(self, ugv_images, ugv_depths, camera_poses, intrinsics, depth_range, ground_tile_size, grid_points_3d):
-        #ground_tile_size = ground_tile_size[0].item()
-        ground_tile_size = 10.
-        w2c_matrices=camera_poses
+    def encode(self, ugv_images):
+        """Extract per-view 2D features once, before any pose-dependent projection."""
         B, N_views, C_img, H_img, W_img = ugv_images.shape
-        # Extract 2D features for all views
-
         img_features_2d = self.feature_extractor(ugv_images.reshape(B * N_views, C_img, H_img, W_img))
         _, C_feat, H_feat, W_feat = img_features_2d.shape
-        img_features_2d = img_features_2d.view(B, N_views, C_feat, H_feat, W_feat)
+        return {
+            "features_2d": img_features_2d.view(B, N_views, C_feat, H_feat, W_feat),
+            "image_size": (H_img, W_img),
+        }
+
+    def encode_from_dict(self, ugv_data):
+        """Convenience wrapper to keep using the batch dictionary directly."""
+        return self.encode(ugv_data["ugv_images"])
+
+    def project(
+        self,
+        ugv_images=None,
+        ugv_depths=None,
+        camera_poses=None,
+        intrinsics=None,
+        depth_range=None,
+        ground_tile_size=None,
+        grid_points_3d=None,
+        encoded_ground=None,
+        ugv_data=None,
+    ):
+        """Project ground inputs into BEV using the current pose/depth inputs.
+
+        This keeps the same argument style as the current forward path, while also
+        allowing cached features to be injected through ``encoded_ground``.
+        """
+        if ugv_data is not None:
+            ugv_images = ugv_data.get("ugv_images", ugv_images)
+            ugv_depths = ugv_data.get("ugv_depths", ugv_depths)
+            camera_poses = ugv_data.get("camera_poses", camera_poses)
+            intrinsics = ugv_data.get("intrinsics", intrinsics)
+            depth_range = ugv_data.get("depth_range", depth_range)
+            ground_tile_size = ugv_data.get("ground_tile_size", ground_tile_size)
+            grid_points_3d = ugv_data.get("grid_points_3d", grid_points_3d)
+
+        if encoded_ground is not None:
+            if not isinstance(encoded_ground, dict):
+                raise TypeError("encoded_ground must be the output of GroundEncoder.encode().")
+            img_features_2d = encoded_ground["features_2d"]
+            H_img, W_img = encoded_ground["image_size"]
+        else:
+            if ugv_images is None:
+                raise ValueError("Either ugv_images or encoded_ground must be provided.")
+            encoded_ground = self.encode(ugv_images)
+            img_features_2d = encoded_ground["features_2d"]
+            H_img, W_img = encoded_ground["image_size"]
+
+        if ugv_depths is None or camera_poses is None or intrinsics is None or depth_range is None or ground_tile_size is None:
+            raise ValueError("Missing one or more required projection arguments.")
+
+        if torch.is_tensor(ground_tile_size):
+            ground_tile_size = float(ground_tile_size.reshape(-1)[0].item())
+        else:
+            ground_tile_size = float(ground_tile_size)
+
+        w2c_matrices=camera_poses
+        B, N_views, C_feat, H_feat, W_feat = img_features_2d.shape
 
 
         # Swap the first and second rows for all world-to-camera matrices
@@ -342,7 +394,7 @@ class GroundEncoder(nn.Module):
         voxel_valid_mask = valid_flat
 
         # Splat features into BEV grid and average duplicates
-        device = ugv_images.device
+        device = img_features_2d.device
         bev_accum = torch.zeros(B, C_feat, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
         count = torch.zeros(B, 1, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
 
@@ -498,6 +550,21 @@ class GroundEncoder(nn.Module):
 
         return bev_features, validity_mask
 
+    def project_from_dict(self, encoded_ground, ugv_data):
+        """Convenience wrapper to project with the standard UGV batch dictionary."""
+        return self.project(encoded_ground=encoded_ground, ugv_data=ugv_data)
+
+    def forward(self, ugv_images, ugv_depths, camera_poses, intrinsics, depth_range, ground_tile_size, grid_points_3d=None):
+        return self.project(
+            ugv_images=ugv_images,
+            ugv_depths=ugv_depths,
+            camera_poses=camera_poses,
+            intrinsics=intrinsics,
+            depth_range=depth_range,
+            ground_tile_size=ground_tile_size,
+            grid_points_3d=grid_points_3d,
+        )
+
 
 class OverheadEncoder(nn.Module):
     """
@@ -512,10 +579,25 @@ class OverheadEncoder(nn.Module):
         vit_embed_dim = self.feature_extractor.embed_dim
         self.projection = nn.Conv2d(vit_embed_dim, feature_dim, kernel_size=1)
 
+    def encode(self, uav_image):
+        """Extract aerial features once before projection."""
+        return self.feature_extractor(uav_image)
+
+    def encode_from_dict(self, uav_data):
+        """Convenience wrapper to keep using the batch dictionary directly."""
+        return self.encode(uav_data["uav_image"])
+
+    def project(self, features_2d):
+        """Project cached aerial features into the final feature space."""
+        return self.projection(features_2d)
+
+    def project_from_dict(self, uav_data):
+        """Convenience wrapper to project with the standard UAV batch dictionary."""
+        return self.project(self.encode_from_dict(uav_data))
+
     def forward(self, uav_image):
-        features_2d = self.feature_extractor(uav_image)
-        bev_features = self.projection(features_2d)
-        return bev_features
+        features_2d = self.encode(uav_image)
+        return self.project(features_2d)
 
 class SnapViT(nn.Module):
     """
