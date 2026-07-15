@@ -101,38 +101,46 @@ def main(args: argparse.Namespace) -> None:
         num_workers=args.num_workers,
     )
 
-    # allow overriding or auto-detecting the backbone model name
+    # Read model settings saved with the checkpoint. A CLI backbone override does
+    # not override the checkpoint's fusion architecture.
+    checkpoint_config = {}
+    checkpoint_config_path = None
+    try:
+        ckpt_path = Path(args.checkpoint)
+        for candidate in (ckpt_path.parent / "config.json", ckpt_path.parent.parent / "config.json"):
+            if candidate.exists():
+                try:
+                    with open(candidate, "r", encoding="utf-8") as fh:
+                        checkpoint_config = json.load(fh)
+                    checkpoint_config_path = candidate
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Allow overriding or auto-detecting the backbone model name.
     if getattr(args, "vit_model", None):
         config["vit_model"] = args.vit_model
         logger.info(f"Overriding vit_model from CLI: {config['vit_model']}")
-    else:
-        # try to read a config.json next to the checkpoint
-        try:
-            ckpt_path = Path(args.checkpoint)
-            for c in (ckpt_path.parent / "config.json", ckpt_path.parent.parent / "config.json"):
-                if c.exists():
-                    try:
-                        with open(c, "r", encoding="utf-8") as fh:
-                            cfg = json.load(fh)
-                        if "vit_model" in cfg:
-                            config["vit_model"] = cfg["vit_model"]
-                            logger.info(f"Auto-detected vit_model='{config['vit_model']}' from {c}")
-                            # also read feature_dim if available
-                            if "feature_dim" in cfg:
-                                config["feature_dim"] = int(cfg["feature_dim"])
-                                logger.info(f"Auto-detected feature_dim={config['feature_dim']} from {c}")
-                            break
-                        if "model_name" in cfg:
-                            config["vit_model"] = cfg["model_name"]
-                            logger.info(f"Auto-detected vit_model='{config['vit_model']}' from {c}")
-                            if "feature_dim" in cfg:
-                                config["feature_dim"] = int(cfg["feature_dim"])
-                                logger.info(f"Auto-detected feature_dim={config['feature_dim']} from {c}")
-                            break
-                    except Exception:
-                        continue
-        except Exception:
-            pass
+    elif checkpoint_config_path is not None:
+        checkpoint_model_name = checkpoint_config.get("vit_model", checkpoint_config.get("model_name"))
+        if checkpoint_model_name is not None:
+            config["vit_model"] = checkpoint_model_name
+            logger.info(f"Auto-detected vit_model='{config['vit_model']}' from {checkpoint_config_path}")
+            if "feature_dim" in checkpoint_config:
+                config["feature_dim"] = int(checkpoint_config["feature_dim"])
+                logger.info(f"Auto-detected feature_dim={config['feature_dim']} from {checkpoint_config_path}")
+
+    for key in (
+        "ground_fusion_mode",
+        "use_height_positional_encoding",
+        "grid_size",
+        "grid_resolution",
+    ):
+        if key in checkpoint_config:
+            config[key] = checkpoint_config[key]
+            logger.info(f"Auto-detected {key}={config[key]!r} from {checkpoint_config_path}")
 
     logger.info(f"Using backbone model: {config['vit_model']}")
     model = SnapViT(config).to(config["device"])

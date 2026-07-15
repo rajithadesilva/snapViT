@@ -537,6 +537,14 @@ def main(args: argparse.Namespace) -> None:
 			CONFIG["model_name"] = checkpoint_model_name
 		if "feature_dim" in checkpoint_config:
 			CONFIG["feature_dim"] = int(checkpoint_config["feature_dim"])
+		for key in (
+			"ground_fusion_mode",
+			"use_height_positional_encoding",
+			"grid_size",
+			"grid_resolution",
+		):
+			if key in checkpoint_config:
+				CONFIG[key] = checkpoint_config[key]
 
 	checkpoint_model_name, checkpoint_feature_dim = infer_model_config_from_checkpoint(args.checkpoint)
 	if checkpoint_model_name is not None and not checkpoint_config:

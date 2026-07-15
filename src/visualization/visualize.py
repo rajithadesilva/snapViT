@@ -19,6 +19,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # Import necessary classes from your project files
+from evaluation.common import apply_checkpoint_fusion_config
 from models.snapvit import SnapViT
 from data.dataset import VineyardDataset
 from visualization.visualize_dataset_samples import visualize_data
@@ -143,6 +144,7 @@ def main(args):
     dataloader = DataLoader(dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=4)
     
     # --- Model ---
+    apply_checkpoint_fusion_config(CONFIG, args.checkpoint)
     model = SnapViT(CONFIG).to(CONFIG['device'])
     if not os.path.exists(args.checkpoint):
         raise FileNotFoundError(f"Checkpoint file not found at {args.checkpoint}")

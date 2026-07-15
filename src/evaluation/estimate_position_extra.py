@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from data.dataset import VineyardDataset
+from evaluation.common import apply_checkpoint_fusion_config
 from models.snapvit import SnapViT
 from visualization.visualize_dataset_samples import visualize_data
 
@@ -249,6 +250,7 @@ def main(args: argparse.Namespace) -> None:
 	if len(dataset) == 0:
 		raise ValueError(f"No scenes found in {args.data_root}")
 
+	apply_checkpoint_fusion_config(CONFIG, args.checkpoint)
 	model = SnapViT(CONFIG).to(CONFIG["device"])
 	if not os.path.exists(args.checkpoint):
 		raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
