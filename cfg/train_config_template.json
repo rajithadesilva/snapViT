@@ -1,15 +1,17 @@
 {
   "data_root": [
-    "/media/data/alessandro/GAIA/tempovine/dataset_tempovine_mar_train1",
-    "/media/data/alessandro/GAIA/tempovine/dataset_tempovine_mar_train2"
+    "/home/rajitha/GAIA/snapViT/datasets/Training folder/dataset_tempovine_mar_run2",
+    "/home/rajitha/GAIA/snapViT/datasets/Training folder/dataset_tempovine_mar_run3"
   ],
-  "vit_model": "swin_base_patch4_window7_224",
+  "vit_model": "convnext_base",
   "train_img_size": [224, 224],
   "feature_dim": 128,
+  "ground_fusion_mode": "mlp",
+  "use_height_positional_encoding": false,
   "num_ugv_views": 8,
   "grid_size": [34, 34, 8],
   "grid_resolution": 0.3,
-  "batch_size": 8,
+  "batch_size": 2,
   "num_workers": 16,
   "pin_memory": true,
   "learning_rate": 1e-4,

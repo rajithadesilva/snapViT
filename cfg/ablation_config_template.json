@@ -2,6 +2,8 @@
   "base_config": {
     "data_root": "/media/data/alessandro/GAIA/tempovine/dataset_tempovine_train1",
     "train_img_size": [224, 224],
+    "ground_fusion_mode": "mlp",
+    "use_height_positional_encoding": false,
     "num_ugv_views": 8,
     "grid_size": [34, 34, 8],
     "grid_resolution": 0.3,

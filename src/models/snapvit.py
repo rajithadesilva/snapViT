@@ -202,8 +202,8 @@ class GroundEncoder(nn.Module):
         model_name='vit_base_patch16_224',
         feature_dim=256,
         pretrained=True,
-        fusion_mode='avg',
-        use_height_positional_encoding=False,
+        fusion_mode='mlp', # "avg" or "mlp"
+        use_height_positional_encoding=True,
     ):
         super().__init__()
         if fusion_mode not in self._FUSION_MODES:
