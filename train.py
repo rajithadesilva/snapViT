@@ -19,6 +19,8 @@ CONFIG = {
     'vit_model': 'vit_small_patch16_224', # Use a smaller model for faster training
     'train_img_size': (224, 224),
     'feature_dim': 128,
+    'ground_fusion_mode': 'mlp',
+    'use_height_positional_encoding': False,
     'num_ugv_views': 8,
     'grid_size': (34, 34, 8), # Smaller grid for faster training
     'grid_resolution': 0.3, # meters per grid cell
@@ -160,12 +162,15 @@ def main():
     history_dir = os.path.join(CONFIG['output_model_path'], 'history')
     history_csv_path = os.path.join(history_dir, 'loss_history.csv')
     history_config_path = os.path.join(history_dir, 'training_config.json')
+    checkpoint_config_path = os.path.join(CONFIG['output_model_path'], 'config.json')
     if not os.path.exists(CONFIG['output_model_path']):
         os.makedirs(CONFIG['output_model_path'], exist_ok=True)
     if not os.path.exists(history_dir):
         os.makedirs(history_dir, exist_ok=True)
 
     with open(history_config_path, mode='w') as f:
+        json.dump(CONFIG, f, indent=2)
+    with open(checkpoint_config_path, mode='w') as f:
         json.dump(CONFIG, f, indent=2)
 
     with open(history_csv_path, mode='w', newline='') as f:

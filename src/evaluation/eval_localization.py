@@ -19,6 +19,7 @@ from data.dataset import VineyardDataset
 from models.snapvit import SnapViT
 
 from evaluation.common import (
+    apply_checkpoint_fusion_config,
     compute_aggregate_stats,
     compute_position_stats,
     evaluate_pose_grid,
@@ -80,6 +81,7 @@ def main(args: argparse.Namespace) -> None:
         num_workers=args.num_workers,
     )
 
+    apply_checkpoint_fusion_config(CONFIG, args.checkpoint)
     model = SnapViT(CONFIG).to(CONFIG["device"])
     if not os.path.exists(args.checkpoint):
         raise FileNotFoundError(f"Checkpoint file not found at {args.checkpoint}")

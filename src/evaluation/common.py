@@ -1,12 +1,38 @@
 from __future__ import annotations
 
 import csv
+import json
+from pathlib import Path
 from typing import Iterable, Tuple
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as R
+
+
+def apply_checkpoint_fusion_config(config: dict, checkpoint_path: str) -> None:
+    """Restore fusion and vertical-grid settings from the nearest checkpoint config."""
+    checkpoint = Path(checkpoint_path).resolve()
+    candidates = (
+        checkpoint.with_name("config.json"),
+        checkpoint.parent.parent / "config.json",
+    )
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        with open(candidate, "r", encoding="utf-8") as f:
+            checkpoint_config = json.load(f)
+        for key in (
+            "ground_fusion_mode",
+            "use_height_positional_encoding",
+            "grid_size",
+            "grid_resolution",
+        ):
+            if key in checkpoint_config:
+                config[key] = checkpoint_config[key]
+        return
 
 
 def parse_angle_list(angle_str: str) -> list[float]:

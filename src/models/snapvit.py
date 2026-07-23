@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -191,24 +193,258 @@ class GroundEncoder(nn.Module):
     """
     Encodes multiple ground-level images into a single BEV feature map.
     """
-    def __init__(self, model_name='vit_base_patch16_224', feature_dim=256, pretrained=True):
+    _FUSION_MODES = {"avg", "mlp"}
+    _HEIGHT_ENCODING_DIM = 16
+    _FUSION_HIDDEN_DIM = 256
+
+    def __init__(
+        self,
+        model_name='vit_base_patch16_224',
+        feature_dim=256,
+        pretrained=True,
+        fusion_mode='mlp', # "avg" or "mlp"
+        use_height_positional_encoding=True,
+    ):
         super().__init__()
+        if fusion_mode not in self._FUSION_MODES:
+            raise ValueError(
+                f"Unsupported ground fusion mode '{fusion_mode}'. "
+                f"Expected one of: {sorted(self._FUSION_MODES)}."
+            )
+        if type(use_height_positional_encoding) is not bool:
+            raise TypeError("use_height_positional_encoding must be a bool.")
+        if fusion_mode == "avg" and use_height_positional_encoding:
+            raise ValueError(
+                "Height positional encoding is only supported when ground_fusion_mode='mlp'."
+            )
+
         self.feature_extractor = create_feature_extractor(
             model_name=model_name,
             pretrained=pretrained,
         )
         vit_embed_dim = self.feature_extractor.embed_dim
+        self.feature_dim = feature_dim
+        self.fusion_mode = fusion_mode
+        self.use_height_positional_encoding = use_height_positional_encoding
 
-        # MLP to fuse features from multiple views for a single 3D point
-        self.fusion_mlp = nn.Sequential(
-            nn.Linear(vit_embed_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, feature_dim)
+        if fusion_mode == "avg":
+            # Preserve the original global-average fusion path and checkpoint keys.
+            self.fusion_mlp = nn.Sequential(
+                nn.Linear(vit_embed_dim, 512),
+                nn.ReLU(),
+                nn.Linear(512, feature_dim)
+            )
+        else:
+            self.feature_norm = nn.LayerNorm(vit_embed_dim)
+            self.token_mlp = nn.Sequential(
+                nn.Linear(vit_embed_dim + self._HEIGHT_ENCODING_DIM, self._FUSION_HIDDEN_DIM),
+                nn.GELU(),
+                nn.Linear(self._FUSION_HIDDEN_DIM, feature_dim),
+            )
+            self.column_mlp = nn.Sequential(
+                nn.LayerNorm(2 * feature_dim),
+                nn.Linear(2 * feature_dim, feature_dim),
+                nn.GELU(),
+                nn.Linear(feature_dim, feature_dim),
+            )
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Older checkpoints may contain this unused layer, which was removed from
+        # the current implementation. Consume only its known keys so strict loading
+        # remains compatible without recreating the dead module.
+        state_dict.pop(f"{prefix}projection_layer.weight", None)
+        state_dict.pop(f"{prefix}projection_layer.bias", None)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
         )
-        
-        self.vertical_pool = nn.AdaptiveMaxPool1d(1)
 
-        self.projection_layer = nn.Conv2d(vit_embed_dim, feature_dim, kernel_size=1)
+    def _height_positional_encoding(self, heights, grid_points_3d, batch_index, batch_size):
+        """Encode continuous world heights relative to the sample's vertical grid."""
+        if not self.use_height_positional_encoding:
+            return heights.new_zeros((heights.numel(), self._HEIGHT_ENCODING_DIM))
+
+        if not torch.is_tensor(grid_points_3d):
+            raise ValueError(
+                "grid_points_3d must be provided as a tensor when height positional encoding is enabled."
+            )
+
+        height_grid = grid_points_3d
+        if height_grid.dim() == 4:
+            if batch_size != 1:
+                raise ValueError(
+                    "An unbatched grid_points_3d tensor is only valid for batch size 1."
+                )
+            height_grid = height_grid.unsqueeze(0)
+
+        if height_grid.dim() != 5 or height_grid.shape[-1] != 3:
+            raise ValueError(
+                "Expected grid_points_3d shape (B, Y, X, Z, 3) "
+                "or unbatched (Y, X, Z, 3)."
+            )
+        if height_grid.shape[0] != batch_size:
+            raise ValueError(
+                "grid_points_3d batch dimension must match the projected feature batch."
+            )
+
+        z_levels = height_grid.shape[-2]
+        if z_levels < 2:
+            raise ValueError("Height positional encoding requires at least two vertical grid levels.")
+
+        z_values = height_grid[batch_index, ..., 2].to(device=heights.device, dtype=torch.float32)
+        if not torch.isfinite(z_values).all():
+            raise ValueError("grid_points_3d contains non-finite height values.")
+
+        z_min = z_values.amin()
+        z_max = z_values.amax()
+        z_span = z_max - z_min
+        if not torch.isfinite(z_span) or z_span <= 0:
+            raise ValueError("Height positional encoding requires a finite, non-zero vertical grid span.")
+
+        positions = ((heights.float() - z_min) / z_span).clamp(0.0, 1.0)
+        positions = positions * float(z_levels - 1)
+
+        half_dim = self._HEIGHT_ENCODING_DIM // 2
+        frequencies = torch.exp(
+            torch.arange(half_dim, device=heights.device, dtype=torch.float32)
+            * (-math.log(10000.0) / half_dim)
+        )
+        angles = positions.unsqueeze(-1) * frequencies.unsqueeze(0)
+        encoding = torch.stack((angles.sin(), angles.cos()), dim=-1).flatten(start_dim=-2)
+        return encoding.to(dtype=heights.dtype)
+
+    def _fuse_projected_features(
+        self,
+        src_feats,
+        voxel_lin_idx,
+        voxel_valid_mask,
+        world_heights,
+        bev_size,
+        grid_points_3d=None,
+    ):
+        """Fuse projected contributions within each view, then average valid views."""
+        if self.fusion_mode != "mlp":
+            raise RuntimeError("_fuse_projected_features is only available in 'mlp' fusion mode.")
+        if src_feats.dim() != 4:
+            raise ValueError("Expected src_feats shape (B, V, P, C).")
+
+        B, N_views, P, C_feat = src_feats.shape
+        if voxel_lin_idx.shape != (B, N_views, P):
+            raise ValueError("voxel_lin_idx must have shape (B, V, P).")
+        if voxel_valid_mask.shape != (B, N_views, P):
+            raise ValueError("voxel_valid_mask must have shape (B, V, P).")
+        if world_heights.shape != (B, N_views, P):
+            raise ValueError("world_heights must have shape (B, V, P).")
+
+        H_feat, W_feat = bev_size
+        if H_feat <= 0 or W_feat <= 0:
+            raise ValueError("bev_size must contain positive height and width values.")
+
+        num_bev_cells = H_feat * W_feat
+        num_view_cells = N_views * num_bev_cells
+        device = src_feats.device
+        dtype = src_feats.dtype
+        view_ids = torch.arange(N_views, device=device).view(N_views, 1).expand(N_views, P)
+
+        # Validate every sample's vertical grid even when it has no valid projected points.
+        if self.use_height_positional_encoding:
+            empty_heights = world_heights.new_empty(0)
+            for b in range(B):
+                self._height_positional_encoding(
+                    empty_heights,
+                    grid_points_3d=grid_points_3d,
+                    batch_index=b,
+                    batch_size=B,
+                )
+
+        bev_features_list = []
+        validity_list = []
+        for b in range(B):
+            lin_idx_b = voxel_lin_idx[b]
+            valid = voxel_valid_mask[b].bool()
+            valid = valid & (lin_idx_b >= 0) & (lin_idx_b < num_bev_cells)
+            valid_flat = valid.reshape(-1)
+
+            if not valid_flat.any():
+                bev_features_list.append(
+                    torch.zeros(self.feature_dim, H_feat, W_feat, device=device, dtype=dtype)
+                )
+                validity_list.append(torch.zeros(1, H_feat, W_feat, device=device, dtype=torch.bool))
+                continue
+
+            features = src_feats[b].reshape(-1, C_feat)[valid_flat]
+            heights = world_heights[b].reshape(-1)[valid_flat]
+            bev_indices = lin_idx_b.reshape(-1)[valid_flat].long()
+            contributing_views = view_ids.reshape(-1)[valid_flat]
+
+            height_encoding = self._height_positional_encoding(
+                heights,
+                grid_points_3d=grid_points_3d,
+                batch_index=b,
+                batch_size=B,
+            ).to(dtype=features.dtype)
+            token_inputs = torch.cat((self.feature_norm(features), height_encoding), dim=-1)
+            tokens = self.token_mlp(token_inputs).to(dtype=dtype)
+
+            group_indices = contributing_views * num_bev_cells + bev_indices
+            group_indices_expanded = group_indices.unsqueeze(0).expand(self.feature_dim, -1)
+
+            token_sum = torch.zeros(
+                self.feature_dim, num_view_cells, device=device, dtype=dtype
+            ).scatter_add(1, group_indices_expanded, tokens.t())
+
+            counts = torch.zeros(num_view_cells, device=device, dtype=dtype)
+            counts = counts.scatter_add(0, group_indices, torch.ones_like(group_indices, dtype=dtype))
+            group_valid = counts > 0
+
+            token_max = torch.full(
+                (self.feature_dim, num_view_cells),
+                -torch.inf,
+                device=device,
+                dtype=dtype,
+            ).scatter_reduce(
+                dim=1,
+                index=group_indices_expanded,
+                src=tokens.t(),
+                reduce="amax",
+                include_self=True,
+            )
+
+            token_mean = token_sum / counts.clamp_min(1).unsqueeze(0)
+            token_max = torch.where(group_valid.unsqueeze(0), token_max, torch.zeros_like(token_max))
+
+            pooled_columns = torch.cat((token_mean, token_max), dim=0).t()
+            column_update = self.column_mlp(pooled_columns).to(dtype=dtype)
+            column_features = token_mean.t() + column_update
+            column_features = column_features * group_valid.unsqueeze(-1).to(dtype=dtype)
+
+            per_view_features = column_features.view(
+                N_views, H_feat, W_feat, self.feature_dim
+            ).permute(0, 3, 1, 2)
+            per_view_validity = group_valid.view(N_views, H_feat, W_feat)
+
+            valid_view_count = per_view_validity.sum(dim=0)
+            bev_features_b = per_view_features.sum(dim=0)
+            bev_features_b = bev_features_b / valid_view_count.clamp_min(1).unsqueeze(0).to(dtype=dtype)
+
+            bev_features_list.append(bev_features_b)
+            validity_list.append(per_view_validity.any(dim=0, keepdim=True))
+
+        return torch.stack(bev_features_list, dim=0), torch.stack(validity_list, dim=0)
 
     def encode(self, ugv_images):
         """Extract per-view 2D features once, before any pose-dependent projection."""
@@ -393,13 +629,24 @@ class GroundEncoder(nn.Module):
         voxel_lin_idx = lin_idx
         voxel_valid_mask = valid_flat
 
-        # Splat features into BEV grid and average duplicates
+        # prepare source features as (B, V, P, C_feat)
+        src_feats = img_features_2d.view(B, N_views, C_feat, -1).permute(0, 1, 3, 2)
+
+        if self.fusion_mode == "mlp":
+            world_heights = Zw.squeeze(2).reshape(B, N_views, -1)
+            return self._fuse_projected_features(
+                src_feats=src_feats,
+                voxel_lin_idx=voxel_lin_idx,
+                voxel_valid_mask=voxel_valid_mask,
+                world_heights=world_heights,
+                bev_size=(H_feat, W_feat),
+                grid_points_3d=grid_points_3d,
+            )
+
+        # Preserve the original global splat-and-average path for "avg" mode.
         device = img_features_2d.device
         bev_accum = torch.zeros(B, C_feat, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
         count = torch.zeros(B, 1, H_feat, W_feat, device=device, dtype=img_features_2d.dtype)
-
-        # prepare source features as (B, V, P, C_feat)
-        src_feats = img_features_2d.view(B, N_views, C_feat, -1).permute(0, 1, 3, 2)
 
         aggregation_method = 'avg'  # ' avg', 'max' or 'avgmax'
         if aggregation_method == 'avg':
@@ -627,6 +874,8 @@ class SnapViT(nn.Module):
             model_name=shared_model_name,
             feature_dim=config['feature_dim'],
             pretrained=pretrained_backbones,
+            fusion_mode=config.get('ground_fusion_mode', 'avg'),
+            use_height_positional_encoding=config.get('use_height_positional_encoding', False),
         )
         self.overhead_encoder = OverheadEncoder(
             model_name=shared_model_name,
