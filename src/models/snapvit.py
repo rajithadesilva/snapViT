@@ -194,6 +194,7 @@ class GroundEncoder(nn.Module):
     Encodes multiple ground-level images into a single BEV feature map.
     """
     _FUSION_MODES = {"avg", "mlp"}
+    _FUSION_VARIANTS = {f"N{i}" for i in range(10)}
     _HEIGHT_ENCODING_DIM = 16
     _FUSION_HIDDEN_DIM = 256
 
@@ -204,6 +205,7 @@ class GroundEncoder(nn.Module):
         pretrained=True,
         fusion_mode='mlp', # "avg" or "mlp"
         use_height_positional_encoding=True,
+        fusion_variant=None,
     ):
         super().__init__()
         if fusion_mode not in self._FUSION_MODES:
@@ -213,6 +215,17 @@ class GroundEncoder(nn.Module):
             )
         if type(use_height_positional_encoding) is not bool:
             raise TypeError("use_height_positional_encoding must be a bool.")
+        if fusion_variant is not None:
+            if not isinstance(fusion_variant, str):
+                raise TypeError("ground_fusion_variant must be a string or None.")
+            fusion_variant = fusion_variant.upper()
+            if fusion_variant not in self._FUSION_VARIANTS:
+                raise ValueError(
+                    f"Unsupported ground fusion variant '{fusion_variant}'. "
+                    f"Expected one of: {sorted(self._FUSION_VARIANTS)}."
+                )
+        if fusion_mode == "avg" and fusion_variant is not None:
+            raise ValueError("ground_fusion_variant is only supported in 'mlp' fusion mode.")
         if fusion_mode == "avg" and use_height_positional_encoding:
             raise ValueError(
                 "Height positional encoding is only supported when ground_fusion_mode='mlp'."
@@ -225,7 +238,14 @@ class GroundEncoder(nn.Module):
         vit_embed_dim = self.feature_extractor.embed_dim
         self.feature_dim = feature_dim
         self.fusion_mode = fusion_mode
-        self.use_height_positional_encoding = use_height_positional_encoding
+        # Explicit variants take precedence over the legacy height-PE switch.
+        # The two legacy MLP configurations map exactly to N0 and N5.
+        self.fusion_variant = (
+            fusion_variant
+            if fusion_variant is not None
+            else ("N5" if use_height_positional_encoding else "N0")
+        ) if fusion_mode == "mlp" else None
+        self.use_height_positional_encoding = self.fusion_variant in {"N5", "N6"}
 
         if fusion_mode == "avg":
             # Preserve the original global-average fusion path and checkpoint keys.
@@ -241,12 +261,56 @@ class GroundEncoder(nn.Module):
                 nn.GELU(),
                 nn.Linear(self._FUSION_HIDDEN_DIM, feature_dim),
             )
-            self.column_mlp = nn.Sequential(
-                nn.LayerNorm(2 * feature_dim),
-                nn.Linear(2 * feature_dim, feature_dim),
-                nn.GELU(),
-                nn.Linear(feature_dim, feature_dim),
-            )
+            column_input_dims = {
+                "N0": 2 * feature_dim,
+                "N2": feature_dim,
+                "N3": feature_dim,
+                # N4 appends one scalar occupancy statistic to the three
+                # channel-wise summaries: [mean, max, std, log1p(count)].
+                "N4": 3 * feature_dim + 1,
+                "N5": 2 * feature_dim,
+                "N6": 2 * feature_dim,
+                "N7": 2 * feature_dim,
+                "N8": 2 * feature_dim,
+                "N9": 2 * feature_dim,
+            }
+            if self.fusion_variant in column_input_dims:
+                column_input_dim = column_input_dims[self.fusion_variant]
+                self.column_mlp = nn.Sequential(
+                    nn.LayerNorm(column_input_dim),
+                    nn.Linear(column_input_dim, feature_dim),
+                    nn.GELU(),
+                    nn.Linear(feature_dim, feature_dim),
+                )
+            if self.fusion_variant == "N7":
+                self.token_attention = nn.Sequential(
+                    nn.LayerNorm(feature_dim),
+                    nn.Linear(feature_dim, 1),
+                )
+            if self.fusion_variant == "N8":
+                self.view_attention = nn.Sequential(
+                    nn.LayerNorm(feature_dim),
+                    nn.Linear(feature_dim, 1),
+                )
+            if self.fusion_variant == "N9":
+                self.column_residual_scale = nn.Parameter(torch.tensor(0.1))
+
+    def fusion_named_parameters(self):
+        """Yield only trainable parameters belonging to the learned fusion head."""
+        module_names = (
+            "feature_norm",
+            "token_mlp",
+            "column_mlp",
+            "token_attention",
+            "view_attention",
+        )
+        for module_name in module_names:
+            module = getattr(self, module_name, None)
+            if module is not None:
+                for name, parameter in module.named_parameters():
+                    yield f"{module_name}.{name}", parameter
+        if hasattr(self, "column_residual_scale"):
+            yield "column_residual_scale", self.column_residual_scale
 
     def _load_from_state_dict(
         self,
@@ -275,8 +339,18 @@ class GroundEncoder(nn.Module):
 
     def _height_positional_encoding(self, heights, grid_points_3d, batch_index, batch_size):
         """Encode continuous world heights relative to the sample's vertical grid."""
+        working_dtype = (
+            torch.float32
+            if heights.dtype in (torch.float16, torch.bfloat16)
+            else heights.dtype
+        )
         if not self.use_height_positional_encoding:
-            return heights.new_zeros((heights.numel(), self._HEIGHT_ENCODING_DIM))
+            return torch.zeros(
+                heights.numel(),
+                self._HEIGHT_ENCODING_DIM,
+                device=heights.device,
+                dtype=working_dtype,
+            )
 
         if not torch.is_tensor(grid_points_3d):
             raise ValueError(
@@ -305,7 +379,9 @@ class GroundEncoder(nn.Module):
         if z_levels < 2:
             raise ValueError("Height positional encoding requires at least two vertical grid levels.")
 
-        z_values = height_grid[batch_index, ..., 2].to(device=heights.device, dtype=torch.float32)
+        z_values = height_grid[batch_index, ..., 2].to(
+            device=heights.device, dtype=working_dtype
+        )
         if not torch.isfinite(z_values).all():
             raise ValueError("grid_points_3d contains non-finite height values.")
 
@@ -315,17 +391,29 @@ class GroundEncoder(nn.Module):
         if not torch.isfinite(z_span) or z_span <= 0:
             raise ValueError("Height positional encoding requires a finite, non-zero vertical grid span.")
 
-        positions = ((heights.float() - z_min) / z_span).clamp(0.0, 1.0)
-        positions = positions * float(z_levels - 1)
+        normalized_positions = (
+            (heights.to(dtype=working_dtype) - z_min) / z_span
+        ).clamp(0.0, 1.0)
+        if self.fusion_variant == "N6":
+            encoding = torch.zeros(
+                heights.numel(),
+                self._HEIGHT_ENCODING_DIM,
+                device=heights.device,
+                dtype=working_dtype,
+            )
+            encoding[:, 0] = normalized_positions
+            return encoding
+
+        positions = normalized_positions * float(z_levels - 1)
 
         half_dim = self._HEIGHT_ENCODING_DIM // 2
         frequencies = torch.exp(
-            torch.arange(half_dim, device=heights.device, dtype=torch.float32)
+            torch.arange(half_dim, device=heights.device, dtype=working_dtype)
             * (-math.log(10000.0) / half_dim)
         )
         angles = positions.unsqueeze(-1) * frequencies.unsqueeze(0)
         encoding = torch.stack((angles.sin(), angles.cos()), dim=-1).flatten(start_dim=-2)
-        return encoding.to(dtype=heights.dtype)
+        return encoding
 
     def _fuse_projected_features(
         self,
@@ -358,6 +446,11 @@ class GroundEncoder(nn.Module):
         num_view_cells = N_views * num_bev_cells
         device = src_feats.device
         dtype = src_feats.dtype
+        aggregation_dtype = (
+            torch.float32
+            if dtype in (torch.float16, torch.bfloat16)
+            else dtype
+        )
         view_ids = torch.arange(N_views, device=device).view(N_views, 1).expand(N_views, P)
 
         # Validate every sample's vertical grid even when it has no valid projected points.
@@ -396,26 +489,30 @@ class GroundEncoder(nn.Module):
                 grid_points_3d=grid_points_3d,
                 batch_index=b,
                 batch_size=B,
-            ).to(dtype=features.dtype)
+            )
             token_inputs = torch.cat((self.feature_norm(features), height_encoding), dim=-1)
-            tokens = self.token_mlp(token_inputs).to(dtype=dtype)
+            tokens = self.token_mlp(token_inputs).to(dtype=aggregation_dtype)
 
             group_indices = contributing_views * num_bev_cells + bev_indices
             group_indices_expanded = group_indices.unsqueeze(0).expand(self.feature_dim, -1)
 
             token_sum = torch.zeros(
-                self.feature_dim, num_view_cells, device=device, dtype=dtype
+                self.feature_dim, num_view_cells, device=device, dtype=aggregation_dtype
             ).scatter_add(1, group_indices_expanded, tokens.t())
 
-            counts = torch.zeros(num_view_cells, device=device, dtype=dtype)
-            counts = counts.scatter_add(0, group_indices, torch.ones_like(group_indices, dtype=dtype))
+            counts = torch.zeros(num_view_cells, device=device, dtype=aggregation_dtype)
+            counts = counts.scatter_add(
+                0,
+                group_indices,
+                torch.ones_like(group_indices, dtype=aggregation_dtype),
+            )
             group_valid = counts > 0
 
             token_max = torch.full(
                 (self.feature_dim, num_view_cells),
                 -torch.inf,
                 device=device,
-                dtype=dtype,
+                dtype=aggregation_dtype,
             ).scatter_reduce(
                 dim=1,
                 index=group_indices_expanded,
@@ -427,21 +524,128 @@ class GroundEncoder(nn.Module):
             token_mean = token_sum / counts.clamp_min(1).unsqueeze(0)
             token_max = torch.where(group_valid.unsqueeze(0), token_max, torch.zeros_like(token_max))
 
-            pooled_columns = torch.cat((token_mean, token_max), dim=0).t()
-            column_update = self.column_mlp(pooled_columns).to(dtype=dtype)
-            column_features = token_mean.t() + column_update
-            column_features = column_features * group_valid.unsqueeze(-1).to(dtype=dtype)
+            variant = self.fusion_variant
+            if variant == "N1":
+                column_features = token_mean.t()
+            else:
+                if variant == "N2":
+                    pooled_columns = token_mean.t()
+                elif variant == "N3":
+                    pooled_columns = token_max.t()
+                elif variant == "N4":
+                    token_square_sum = torch.zeros(
+                        self.feature_dim,
+                        num_view_cells,
+                        device=device,
+                        dtype=aggregation_dtype,
+                    ).scatter_add(1, group_indices_expanded, tokens.t().square())
+                    population_variance = (
+                        token_square_sum / counts.clamp_min(1).unsqueeze(0)
+                        - token_mean.square()
+                    ).clamp_min(0)
+                    # Avoid the undefined sqrt gradient at exactly zero variance
+                    # while retaining the exact population standard deviation.
+                    has_variance = population_variance > 0
+                    safe_variance = torch.where(
+                        has_variance,
+                        population_variance,
+                        torch.ones_like(population_variance),
+                    )
+                    token_std = torch.where(
+                        has_variance,
+                        safe_variance.sqrt(),
+                        torch.zeros_like(population_variance),
+                    )
+                    log_counts = counts.log1p().unsqueeze(0)
+                    pooled_columns = torch.cat(
+                        (token_mean, token_max, token_std, log_counts), dim=0
+                    ).t()
+                elif variant == "N7":
+                    token_scores = self.token_attention(tokens).squeeze(-1).to(
+                        dtype=aggregation_dtype
+                    )
+                    group_score_max = torch.full(
+                        (num_view_cells,),
+                        -torch.inf,
+                        device=device,
+                        dtype=aggregation_dtype,
+                    ).scatter_reduce(
+                        dim=0,
+                        index=group_indices,
+                        src=token_scores,
+                        reduce="amax",
+                        include_self=True,
+                    )
+                    token_weights_unnormalized = torch.exp(
+                        token_scores - group_score_max[group_indices]
+                    )
+                    group_weight_sums = torch.zeros(
+                        num_view_cells, device=device, dtype=aggregation_dtype
+                    ).scatter_add(0, group_indices, token_weights_unnormalized)
+                    token_weights = (
+                        token_weights_unnormalized
+                        / group_weight_sums[group_indices].clamp_min(
+                            torch.finfo(aggregation_dtype).tiny
+                        )
+                    )
+                    attention_sum = torch.zeros(
+                        self.feature_dim,
+                        num_view_cells,
+                        device=device,
+                        dtype=aggregation_dtype,
+                    ).scatter_add(
+                        1,
+                        group_indices_expanded,
+                        (tokens * token_weights.unsqueeze(-1)).t(),
+                    )
+                    pooled_columns = torch.cat((token_mean, attention_sum), dim=0).t()
+                else:
+                    pooled_columns = torch.cat((token_mean, token_max), dim=0).t()
+
+                column_update = self.column_mlp(pooled_columns).to(
+                    dtype=aggregation_dtype
+                )
+                if variant == "N9":
+                    column_update = self.column_residual_scale.to(
+                        dtype=aggregation_dtype
+                    ) * column_update
+                column_features = token_mean.t() + column_update
+            column_features = column_features * group_valid.unsqueeze(-1).to(
+                dtype=aggregation_dtype
+            )
 
             per_view_features = column_features.view(
                 N_views, H_feat, W_feat, self.feature_dim
             ).permute(0, 3, 1, 2)
             per_view_validity = group_valid.view(N_views, H_feat, W_feat)
 
-            valid_view_count = per_view_validity.sum(dim=0)
-            bev_features_b = per_view_features.sum(dim=0)
-            bev_features_b = bev_features_b / valid_view_count.clamp_min(1).unsqueeze(0).to(dtype=dtype)
+            if variant == "N8":
+                view_scores = self.view_attention(column_features).to(
+                    dtype=aggregation_dtype
+                )
+                view_scores = view_scores.view(N_views, H_feat, W_feat)
+                masked_scores = view_scores.masked_fill(
+                    ~per_view_validity, torch.finfo(aggregation_dtype).min
+                )
+                score_max = masked_scores.amax(dim=0, keepdim=True)
+                view_weights = torch.exp(masked_scores - score_max)
+                view_weights = view_weights * per_view_validity.to(
+                    dtype=aggregation_dtype
+                )
+                view_weights = view_weights / view_weights.sum(
+                    dim=0, keepdim=True
+                ).clamp_min(torch.finfo(aggregation_dtype).tiny)
+                bev_features_b = (
+                    per_view_features * view_weights.unsqueeze(1)
+                ).sum(dim=0)
+            else:
+                valid_view_count = per_view_validity.sum(dim=0)
+                bev_features_b = per_view_features.sum(dim=0)
+                bev_features_b = bev_features_b / valid_view_count.clamp_min(1).unsqueeze(0).to(
+                    dtype=aggregation_dtype
+                )
 
-            bev_features_list.append(bev_features_b)
+            bev_features_list.append(bev_features_b.to(dtype=dtype))
             validity_list.append(per_view_validity.any(dim=0, keepdim=True))
 
         return torch.stack(bev_features_list, dim=0), torch.stack(validity_list, dim=0)
@@ -876,6 +1080,7 @@ class SnapViT(nn.Module):
             pretrained=pretrained_backbones,
             fusion_mode=config.get('ground_fusion_mode', 'avg'),
             use_height_positional_encoding=config.get('use_height_positional_encoding', False),
+            fusion_variant=config.get('ground_fusion_variant'),
         )
         self.overhead_encoder = OverheadEncoder(
             model_name=shared_model_name,

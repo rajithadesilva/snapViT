@@ -12,7 +12,11 @@ from scipy.spatial.transform import Rotation as R
 
 
 def apply_checkpoint_fusion_config(config: dict, checkpoint_path: str) -> None:
-    """Restore fusion and vertical-grid settings from the nearest checkpoint config."""
+    """Restore model/data settings from the nearest checkpoint config.
+
+    Kept for older evaluation entrypoints.  New code should preferably restore
+    the complete saved configuration before constructing its dataset.
+    """
     checkpoint = Path(checkpoint_path).resolve()
     candidates = (
         checkpoint.with_name("config.json"),
@@ -24,14 +28,30 @@ def apply_checkpoint_fusion_config(config: dict, checkpoint_path: str) -> None:
             continue
         with open(candidate, "r", encoding="utf-8") as f:
             checkpoint_config = json.load(f)
-        for key in (
+        restorable_keys = (
+            "vit_model",
+            "model_name",
+            "feature_dim",
             "ground_fusion_mode",
+            "ground_fusion_variant",
             "use_height_positional_encoding",
+            "train_img_size",
+            "num_ugv_views",
             "grid_size",
             "grid_resolution",
-        ):
+            "use_depth",
+            "depth_range",
+            "ground_tile_size",
+            "edge_margin_m",
+            "consecutive_frames",
+            "pretrained_backbones",
+        )
+        for key in restorable_keys:
             if key in checkpoint_config:
                 config[key] = checkpoint_config[key]
+        for key in ("train_img_size", "grid_size", "depth_range"):
+            if key in config and isinstance(config[key], list):
+                config[key] = tuple(config[key])
         return
 
 
@@ -83,6 +103,13 @@ def get_gt_yaw(camera_pose_w2c: torch.Tensor) -> float:
     return float(np.degrees(yaw))
 
 
+def yaw_from_w2c_tensor(camera_pose_w2c: torch.Tensor) -> torch.Tensor:
+    """Return the camera's absolute world yaw in degrees without leaving torch."""
+    c2w = torch.linalg.inv(camera_pose_w2c)
+    yaw = torch.rad2deg(torch.atan2(c2w[1, 0], c2w[0, 0]))
+    return torch.remainder(yaw + 180.0, 360.0) - 180.0
+
+
 def angular_distance(angle1_deg: float, angle2_deg: float) -> float:
     """Compute shortest angular distance between two angles in degrees."""
     delta = (angle2_deg - angle1_deg) % 360
@@ -96,6 +123,49 @@ def clone_ugv_data_with_pose(ugv_data: dict[str, torch.Tensor], camera_poses: to
     cloned = dict(ugv_data)
     cloned["camera_poses"] = camera_poses
     return cloned
+
+
+def transform_camera_rig(
+    camera_poses_w2c: torch.Tensor,
+    dx: float | torch.Tensor,
+    dy: float | torch.Tensor,
+    yaw_degrees: float | torch.Tensor,
+) -> torch.Tensor:
+    """Apply one rigid XY/yaw hypothesis to every view in a camera sequence.
+
+    The first view is the rig anchor. Relative locations and orientations of all
+    remaining views are preserved, which is essential when localization uses
+    more than one UGV image.
+    """
+    if camera_poses_w2c.dim() != 3 or camera_poses_w2c.shape[-2:] != (4, 4):
+        raise ValueError("Expected camera poses with shape (V,4,4).")
+    if camera_poses_w2c.shape[0] == 0:
+        raise ValueError("At least one camera pose is required.")
+
+    device = camera_poses_w2c.device
+    dtype = camera_poses_w2c.dtype
+    c2w = torch.linalg.inv(camera_poses_w2c)
+    anchor = c2w[0, :3, 3]
+    rotation = yaw_rotation_matrix(yaw_degrees, device=device, dtype=dtype)
+    translation = torch.stack(
+        (
+            torch.as_tensor(dx, device=device, dtype=dtype),
+            torch.as_tensor(dy, device=device, dtype=dtype),
+            torch.zeros((), device=device, dtype=dtype),
+        )
+    )
+
+    relative_positions = c2w[:, :3, 3] - anchor
+    transformed = c2w.clone()
+    transformed[:, :3, :3] = torch.matmul(
+        rotation.unsqueeze(0), c2w[:, :3, :3]
+    )
+    transformed[:, :3, 3] = (
+        anchor
+        + translation
+        + torch.matmul(rotation, relative_positions.transpose(0, 1)).transpose(0, 1)
+    )
+    return torch.linalg.inv(transformed)
 
 
 def masked_avg_pool(features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -219,14 +289,10 @@ def evaluate_pose_grid(
             best_angle_idx = 0
 
             for angle_idx, yaw_deg in enumerate(yaw_candidates_tensor):
-                modified_pose = camera_w2c.clone()
-                modified_pose[0, 3] -= dx
-                modified_pose[1, 3] -= dy
-                r_delta = yaw_rotation_matrix(yaw_deg, device=device, dtype=dtype)
-                modified_pose[:3, :3] = torch.matmul(r_delta, modified_pose[:3, :3])
-
                 candidate_camera_poses = original_camera_poses.clone()
-                candidate_camera_poses[0, 0] = modified_pose
+                candidate_camera_poses[0] = transform_camera_rig(
+                    original_camera_poses[0], dx=dx, dy=dy, yaw_degrees=yaw_deg
+                )
                 candidate_ugv_data = clone_ugv_data_with_pose(ugv_data, candidate_camera_poses)
 
                 if use_cached:
@@ -253,7 +319,13 @@ def evaluate_pose_grid(
 
     logits = pose_scores / max(softmax_temp, 1e-6)
     probability_map = F.softmax(logits.view(-1), dim=0).view_as(logits)
-    best_yaw_map_deg = yaw_candidates_tensor[best_yaw_idx]
+    base_yaw_deg = yaw_from_w2c_tensor(camera_w2c)
+    # Candidates are rigid yaw deltas around the original rig. Report absolute
+    # yaw so downstream comparison with the absolute ground-truth yaw is valid.
+    best_yaw_map_deg = torch.remainder(
+        base_yaw_deg + yaw_candidates_tensor[best_yaw_idx] + 180.0,
+        360.0,
+    ) - 180.0
     return pose_scores, probability_map, best_yaw_map_deg, offsets, poses
 
 

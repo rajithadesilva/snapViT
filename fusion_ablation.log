@@ -1,0 +1,1209 @@
+nohup: ignoring input
+Fusion ablation campaign
+  run directory: /home/rajitha/GAIA/snapViT/runs/fusion_ablations
+  device:        cuda:0
+  workers:       4
+nohup: ignoring input
+Fusion ablation campaign
+  run directory: /home/rajitha/GAIA/snapViT/runs/fusion_ablations
+  device:        cuda:0
+  workers:       4
+nohup: ignoring input
+Fusion ablation campaign
+  run directory: /home/rajitha/GAIA/snapViT/runs/fusion_ablations
+  device:        cuda:0
+  workers:       4
+Filtered 549 scenes with no UGV views farther than 1.00 m from the aerial image edge.
+Initialized ConvNeXTFeatureExtractor with embed dim 512
+Initialized ConvNeXTFeatureExtractor with embed dim 512
+Filtered 549 scenes with no UGV views farther than 1.00 m from the aerial image edge.
+Filtered 549 scenes with no UGV views farther than 1.00 m from the aerial image edge.
+Initialized ConvNeXTFeatureExtractor with embed dim 512
+Initialized ConvNeXTFeatureExtractor with embed dim 512
+{
+  "state": "complete_with_failures",
+  "status": "complete_with_failures",
+  "stage1": {
+    "stage": "stage1",
+    "ranking": [
+      {
+        "best_epoch": 17,
+        "best_metrics": {
+          "mrr": 0.11002529412508011,
+          "recall@1": 0.03552631661295891,
+          "recall@5": 0.14473684132099152,
+          "val_loss": 0.6537051604680815
+        },
+        "best_val_loss": 0.6537051604680815,
+        "epochs_completed": 25,
+        "mrr": 0.11002529412508011,
+        "recall@1": 0.03552631661295891,
+        "recall@5": 0.14473684132099152,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N5/seed_42",
+        "runtime_seconds": 4105.649320602417,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175413761,
+        "trainable_parameters": 219264,
+        "variant": "N5",
+        "rank_sum": 7
+      },
+      {
+        "best_epoch": 15,
+        "best_metrics": {
+          "mrr": 0.11798077821731567,
+          "recall@1": 0.03947368264198303,
+          "recall@5": 0.169736847281456,
+          "val_loss": 0.6639449467956039
+        },
+        "best_val_loss": 0.6639449467956039,
+        "epochs_completed": 23,
+        "mrr": 0.11798077821731567,
+        "recall@1": 0.03947368264198303,
+        "recall@5": 0.169736847281456,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N4/seed_42",
+        "runtime_seconds": 3784.7849967479706,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175430531,
+        "trainable_parameters": 236034,
+        "variant": "N4",
+        "rank_sum": 10
+      },
+      {
+        "best_epoch": 17,
+        "best_metrics": {
+          "mrr": 0.11209244281053543,
+          "recall@1": 0.03552631661295891,
+          "recall@5": 0.1473684161901474,
+          "val_loss": 0.6638723850544346
+        },
+        "best_val_loss": 0.6638723850544346,
+        "epochs_completed": 25,
+        "mrr": 0.11209244281053543,
+        "recall@1": 0.03552631661295891,
+        "recall@5": 0.1473684161901474,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N7/seed_42",
+        "runtime_seconds": 4112.226569890976,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175414146,
+        "trainable_parameters": 219649,
+        "variant": "N7",
+        "rank_sum": 11
+      },
+      {
+        "best_epoch": 22,
+        "best_metrics": {
+          "mrr": 0.1067042425274849,
+          "recall@1": 0.03552631661295891,
+          "recall@5": 0.1407894790172577,
+          "val_loss": 0.6570121988772084
+        },
+        "best_val_loss": 0.6570121988772084,
+        "epochs_completed": 30,
+        "mrr": 0.1067042425274849,
+        "recall@1": 0.03552631661295891,
+        "recall@5": 0.1407894790172577,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N2/seed_42",
+        "runtime_seconds": 4921.0007581710815,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175397121,
+        "trainable_parameters": 202624,
+        "variant": "N2",
+        "rank_sum": 12
+      },
+      {
+        "best_epoch": 17,
+        "best_metrics": {
+          "mrr": 0.107523113489151,
+          "recall@1": 0.03552631661295891,
+          "recall@5": 0.14605262875556946,
+          "val_loss": 0.662318552678794
+        },
+        "best_val_loss": 0.662318552678794,
+        "epochs_completed": 25,
+        "mrr": 0.107523113489151,
+        "recall@1": 0.03552631661295891,
+        "recall@5": 0.14605262875556946,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N6/seed_42",
+        "runtime_seconds": 4106.01830124855,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175413761,
+        "trainable_parameters": 219264,
+        "variant": "N6",
+        "rank_sum": 13
+      },
+      {
+        "best_epoch": 17,
+        "best_metrics": {
+          "mrr": 0.11030280590057373,
+          "recall@1": 0.03421052545309067,
+          "recall@5": 0.1407894790172577,
+          "val_loss": 0.6636004861750591
+        },
+        "best_val_loss": 0.6636004861750591,
+        "epochs_completed": 25,
+        "mrr": 0.11030280590057373,
+        "recall@1": 0.03421052545309067,
+        "recall@5": 0.1407894790172577,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N8/seed_42",
+        "runtime_seconds": 4105.715222835541,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175414146,
+        "trainable_parameters": 219649,
+        "variant": "N8",
+        "rank_sum": 15
+      },
+      {
+        "best_epoch": 17,
+        "best_metrics": {
+          "mrr": 0.10701517760753632,
+          "recall@1": 0.03421052545309067,
+          "recall@5": 0.14342105388641357,
+          "val_loss": 0.6614114056304587
+        },
+        "best_val_loss": 0.6614114056304587,
+        "epochs_completed": 25,
+        "mrr": 0.10701517760753632,
+        "recall@1": 0.03421052545309067,
+        "recall@5": 0.14342105388641357,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N0/seed_42",
+        "runtime_seconds": 4071.7762377262115,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175413761,
+        "trainable_parameters": 219264,
+        "variant": "N0",
+        "rank_sum": 17
+      },
+      {
+        "best_epoch": 22,
+        "best_metrics": {
+          "mrr": 0.10176621377468109,
+          "recall@1": 0.02368421107530594,
+          "recall@5": 0.14868420362472534,
+          "val_loss": 0.6594050043090982
+        },
+        "best_val_loss": 0.6594050043090982,
+        "epochs_completed": 30,
+        "mrr": 0.10176621377468109,
+        "recall@1": 0.02368421107530594,
+        "recall@5": 0.14868420362472534,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N9/seed_42",
+        "runtime_seconds": 4928.455753564835,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175413762,
+        "trainable_parameters": 219265,
+        "variant": "N9",
+        "rank_sum": 23
+      },
+      {
+        "best_epoch": 18,
+        "best_metrics": {
+          "mrr": 0.10928449779748917,
+          "recall@1": 0.031578946858644485,
+          "recall@5": 0.1565789431333542,
+          "val_loss": 0.6823251068346987
+        },
+        "best_val_loss": 0.6823251068346987,
+        "epochs_completed": 26,
+        "mrr": 0.10928449779748917,
+        "recall@1": 0.031578946858644485,
+        "recall@5": 0.1565789431333542,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N3/seed_42",
+        "runtime_seconds": 4260.7348256111145,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175397121,
+        "trainable_parameters": 202624,
+        "variant": "N3",
+        "rank_sum": 23
+      },
+      {
+        "best_epoch": 25,
+        "best_metrics": {
+          "mrr": 0.1059616282582283,
+          "recall@1": 0.032894738018512726,
+          "recall@5": 0.15000000596046448,
+          "val_loss": 0.6966341740525278
+        },
+        "best_val_loss": 0.6966341740525278,
+        "epochs_completed": 33,
+        "mrr": 0.1059616282582283,
+        "recall@1": 0.032894738018512726,
+        "recall@5": 0.15000000596046448,
+        "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage1/N1/seed_42",
+        "runtime_seconds": 5369.760486364365,
+        "seed": 42,
+        "stage": "stage1",
+        "state": "complete",
+        "status": "complete",
+        "total_parameters": 175363841,
+        "trainable_parameters": 169344,
+        "variant": "N1",
+        "rank_sum": 27
+      }
+    ],
+    "top_variants": [
+      "N5",
+      "N4",
+      "N7"
+    ],
+    "top_three": [
+      "N5",
+      "N4",
+      "N7"
+    ],
+    "top3": [
+      "N5",
+      "N4",
+      "N7"
+    ],
+    "finalists": [
+      "N5",
+      "N4",
+      "N7"
+    ]
+  },
+  "stage2": {
+    "stage": "stage2",
+    "ranking": [
+      {
+        "state": "complete",
+        "variant": "N5",
+        "best_val_loss": 0.5642485460464072,
+        "recall@1": 0.04342105363806089,
+        "recall@5": 0.15833333134651184,
+        "mrr": 0.12076457093159358,
+        "seeds": [
+          7,
+          42,
+          123
+        ],
+        "rank_sum": 4
+      },
+      {
+        "state": "complete",
+        "variant": "N7",
+        "best_val_loss": 0.6262856659132235,
+        "recall@1": 0.04254385953148206,
+        "recall@5": 0.15657894810040793,
+        "mrr": 0.11848023285468419,
+        "seeds": [
+          7,
+          42,
+          123
+        ],
+        "rank_sum": 7
+      },
+      {
+        "state": "complete",
+        "variant": "N4",
+        "best_val_loss": 0.6371600984088314,
+        "recall@1": 0.044736843556165695,
+        "recall@5": 0.15307017664114633,
+        "mrr": 0.11830509702364604,
+        "seeds": [
+          7,
+          42,
+          123
+        ],
+        "rank_sum": 7
+      }
+    ],
+    "winner_variant": "N5",
+    "winner": "N5",
+    "canonical_run": {
+      "best_epoch": 59,
+      "best_metrics": {
+        "mrr": 0.14100034534931183,
+        "recall@1": 0.056578949093818665,
+        "recall@5": 0.1828947365283966,
+        "val_loss": 0.5648854967788793
+      },
+      "best_val_loss": 0.5648854967788793,
+      "epochs_completed": 71,
+      "mrr": 0.14100034534931183,
+      "recall@1": 0.056578949093818665,
+      "recall@5": 0.1828947365283966,
+      "run_dir": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N5/seed_7",
+      "runtime_seconds": 22399.6542904377,
+      "seed": 7,
+      "stage": "stage2",
+      "state": "complete",
+      "status": "complete",
+      "total_parameters": 175413761,
+      "trainable_parameters": 58169472,
+      "variant": "N5",
+      "rank_sum": 4
+    }
+  },
+  "winner": {
+    "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/winner/best_model.pth",
+    "config": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/winner/config.json"
+  },
+  "heldout": {
+    "state": "complete_with_failures",
+    "status": "complete_with_failures",
+    "timestamp_utc": "2026-08-08T09:08:40.853153+00:00",
+    "runtime_seconds": 25066.170518875122,
+    "total": 10,
+    "completed": 9,
+    "failed": 1,
+    "pending": 0,
+    "evaluations": [
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N5_seed_42",
+        "variant": "N5",
+        "seed": 42,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2951.1058144569397,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N5/seed_42/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.3737741967774575,
+            "most_probable_distance_mean_m": 3.839127865825134,
+            "most_probable_distance_median_m": 4.670385201323191,
+            "most_probable_distance_std_m": 1.9335452543580958,
+            "most_probable_within_1.0m_count": 18,
+            "most_probable_within_1.0m_ratio": 0.18,
+            "most_probable_within_2.0m_count": 20,
+            "most_probable_within_2.0m_ratio": 0.2,
+            "most_probable_within_3.0m_count": 27,
+            "most_probable_within_3.0m_ratio": 0.27,
+            "most_probable_yaw_error_max_deg": 179.99999893480106,
+            "most_probable_yaw_error_mean_deg": 51.30000195279988,
+            "most_probable_yaw_error_median_deg": 2.438678039595743e-05,
+            "most_probable_yaw_error_std_deg": 61.37841140362972,
+            "nearest_topk_distance_max_m": 5.70087715816865,
+            "nearest_topk_distance_mean_m": 3.0992578862826172,
+            "nearest_topk_distance_median_m": 3.9131188556666032,
+            "nearest_topk_distance_std_m": 1.894294196526634,
+            "nearest_topk_within_1.0m_count": 27,
+            "nearest_topk_within_1.0m_ratio": 0.27,
+            "nearest_topk_within_2.0m_count": 27,
+            "nearest_topk_within_2.0m_ratio": 0.27,
+            "nearest_topk_within_3.0m_count": 38,
+            "nearest_topk_within_3.0m_ratio": 0.38,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.168,
+            "topk_precision_within_2.0m_mean": 0.18200000000000002,
+            "topk_precision_within_3.0m_mean": 0.26,
+            "topk_recall_within_1.0m_count": 27,
+            "topk_recall_within_1.0m_ratio": 0.27,
+            "topk_recall_within_2.0m_count": 27,
+            "topk_recall_within_2.0m_ratio": 0.27,
+            "topk_recall_within_3.0m_count": 38,
+            "topk_recall_within_3.0m_ratio": 0.38
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 43.6980094909668,
+            "median_rank": 29.0,
+            "mrr": 0.11180714517831802,
+            "recall@1": 0.03435804694890976,
+            "recall@5": 0.16455696523189545
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 42,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N5_seed_7",
+        "variant": "N5",
+        "seed": 7,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2962.74724817276,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N5/seed_7/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 7.071067875085748,
+            "most_probable_distance_mean_m": 3.921342100930936,
+            "most_probable_distance_median_m": 4.640078967626115,
+            "most_probable_distance_std_m": 1.8472820816366042,
+            "most_probable_within_1.0m_count": 16,
+            "most_probable_within_1.0m_ratio": 0.16,
+            "most_probable_within_2.0m_count": 17,
+            "most_probable_within_2.0m_ratio": 0.17,
+            "most_probable_within_3.0m_count": 23,
+            "most_probable_within_3.0m_ratio": 0.23,
+            "most_probable_yaw_error_max_deg": 179.99999848033798,
+            "most_probable_yaw_error_mean_deg": 63.45000240297974,
+            "most_probable_yaw_error_median_deg": 45.000000103130404,
+            "most_probable_yaw_error_std_deg": 66.47064682353644,
+            "nearest_topk_distance_max_m": 5.7008770889019775,
+            "nearest_topk_distance_mean_m": 2.85394509432917,
+            "nearest_topk_distance_median_m": 3.450183699638084,
+            "nearest_topk_distance_std_m": 2.024227557017222,
+            "nearest_topk_within_1.0m_count": 31,
+            "nearest_topk_within_1.0m_ratio": 0.31,
+            "nearest_topk_within_2.0m_count": 33,
+            "nearest_topk_within_2.0m_ratio": 0.33,
+            "nearest_topk_within_3.0m_count": 45,
+            "nearest_topk_within_3.0m_ratio": 0.45,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.19399999999999998,
+            "topk_precision_within_2.0m_mean": 0.20600000000000002,
+            "topk_precision_within_3.0m_mean": 0.262,
+            "topk_recall_within_1.0m_count": 31,
+            "topk_recall_within_1.0m_ratio": 0.31,
+            "topk_recall_within_2.0m_count": 33,
+            "topk_recall_within_2.0m_ratio": 0.33,
+            "topk_recall_within_3.0m_count": 45,
+            "topk_recall_within_3.0m_ratio": 0.45
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 43.01988983154297,
+            "median_rank": 28.0,
+            "mrr": 0.11614815145730972,
+            "recall@1": 0.037974681705236435,
+            "recall@5": 0.16636528074741364
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 7,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N5_seed_123",
+        "variant": "N5",
+        "seed": 123,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2921.6418697834015,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N5/seed_123/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.896557068853527,
+            "most_probable_distance_mean_m": 3.628053684199584,
+            "most_probable_distance_median_m": 4.375723548864536,
+            "most_probable_distance_std_m": 1.976354334306243,
+            "most_probable_within_1.0m_count": 21,
+            "most_probable_within_1.0m_ratio": 0.21,
+            "most_probable_within_2.0m_count": 21,
+            "most_probable_within_2.0m_ratio": 0.21,
+            "most_probable_within_3.0m_count": 32,
+            "most_probable_within_3.0m_ratio": 0.32,
+            "most_probable_yaw_error_max_deg": 179.9999993300223,
+            "most_probable_yaw_error_mean_deg": 56.7000012258902,
+            "most_probable_yaw_error_median_deg": 44.99998288872328,
+            "most_probable_yaw_error_std_deg": 67.53598524062808,
+            "nearest_topk_distance_max_m": 6.189709160644022,
+            "nearest_topk_distance_mean_m": 2.8962099766357046,
+            "nearest_topk_distance_median_m": 3.20156214896964,
+            "nearest_topk_distance_std_m": 1.951465542569601,
+            "nearest_topk_within_1.0m_count": 28,
+            "nearest_topk_within_1.0m_ratio": 0.28,
+            "nearest_topk_within_2.0m_count": 28,
+            "nearest_topk_within_2.0m_ratio": 0.28,
+            "nearest_topk_within_3.0m_count": 45,
+            "nearest_topk_within_3.0m_ratio": 0.45,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.206,
+            "topk_precision_within_2.0m_mean": 0.21,
+            "topk_precision_within_3.0m_mean": 0.30400000000000005,
+            "topk_recall_within_1.0m_count": 28,
+            "topk_recall_within_1.0m_ratio": 0.28,
+            "topk_recall_within_2.0m_count": 28,
+            "topk_recall_within_2.0m_ratio": 0.28,
+            "topk_recall_within_3.0m_count": 45,
+            "topk_recall_within_3.0m_ratio": 0.45
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 40.43037796020508,
+            "median_rank": 29.0,
+            "mrr": 0.11117806285619736,
+            "recall@1": 0.028933092951774597,
+            "recall@5": 0.14828209578990936
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 123,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N4_seed_42",
+        "variant": "N4",
+        "seed": 42,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2634.3060665130615,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N4/seed_42/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.726812132081125,
+            "most_probable_distance_mean_m": 3.8295098018410068,
+            "most_probable_distance_median_m": 4.673671187765983,
+            "most_probable_distance_std_m": 1.9671946138902816,
+            "most_probable_within_1.0m_count": 18,
+            "most_probable_within_1.0m_ratio": 0.18,
+            "most_probable_within_2.0m_count": 20,
+            "most_probable_within_2.0m_ratio": 0.2,
+            "most_probable_within_3.0m_count": 28,
+            "most_probable_within_3.0m_ratio": 0.28,
+            "most_probable_yaw_error_max_deg": 179.9999993300223,
+            "most_probable_yaw_error_mean_deg": 56.70000103200238,
+            "most_probable_yaw_error_median_deg": 45.0000014072727,
+            "most_probable_yaw_error_std_deg": 63.51857503315179,
+            "nearest_topk_distance_max_m": 5.550900682832888,
+            "nearest_topk_distance_mean_m": 3.0384861103671166,
+            "nearest_topk_distance_median_m": 3.9329829733397803,
+            "nearest_topk_distance_std_m": 1.891950615819772,
+            "nearest_topk_within_1.0m_count": 26,
+            "nearest_topk_within_1.0m_ratio": 0.26,
+            "nearest_topk_within_2.0m_count": 27,
+            "nearest_topk_within_2.0m_ratio": 0.27,
+            "nearest_topk_within_3.0m_count": 38,
+            "nearest_topk_within_3.0m_ratio": 0.38,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.168,
+            "topk_precision_within_2.0m_mean": 0.18600000000000003,
+            "topk_precision_within_3.0m_mean": 0.264,
+            "topk_recall_within_1.0m_count": 26,
+            "topk_recall_within_1.0m_ratio": 0.26,
+            "topk_recall_within_2.0m_count": 27,
+            "topk_recall_within_2.0m_ratio": 0.27,
+            "topk_recall_within_3.0m_count": 38,
+            "topk_recall_within_3.0m_ratio": 0.38
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 43.75587844848633,
+            "median_rank": 31.0,
+            "mrr": 0.12080419063568115,
+            "recall@1": 0.04882459342479706,
+            "recall@5": 0.15370705723762512
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 42,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N4_seed_7",
+        "variant": "N4",
+        "seed": 7,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2672.4165031909943,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N4/seed_7/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 7.071067896159174,
+            "most_probable_distance_mean_m": 3.96681265252054,
+            "most_probable_distance_median_m": 4.789293246545739,
+            "most_probable_distance_std_m": 1.9041132714563394,
+            "most_probable_within_1.0m_count": 15,
+            "most_probable_within_1.0m_ratio": 0.15,
+            "most_probable_within_2.0m_count": 17,
+            "most_probable_within_2.0m_ratio": 0.17,
+            "most_probable_within_3.0m_count": 24,
+            "most_probable_within_3.0m_ratio": 0.24,
+            "most_probable_yaw_error_max_deg": 179.99999992820415,
+            "most_probable_yaw_error_mean_deg": 59.400001356573355,
+            "most_probable_yaw_error_median_deg": 44.99999515489722,
+            "most_probable_yaw_error_std_deg": 65.79239595936698,
+            "nearest_topk_distance_max_m": 6.209871055407275,
+            "nearest_topk_distance_mean_m": 3.0520144704074075,
+            "nearest_topk_distance_median_m": 3.594814240107765,
+            "nearest_topk_distance_std_m": 1.995828801412841,
+            "nearest_topk_within_1.0m_count": 28,
+            "nearest_topk_within_1.0m_ratio": 0.28,
+            "nearest_topk_within_2.0m_count": 28,
+            "nearest_topk_within_2.0m_ratio": 0.28,
+            "nearest_topk_within_3.0m_count": 40,
+            "nearest_topk_within_3.0m_ratio": 0.4,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.18199999999999997,
+            "topk_precision_within_2.0m_mean": 0.19199999999999995,
+            "topk_precision_within_3.0m_mean": 0.25799999999999995,
+            "topk_recall_within_1.0m_count": 28,
+            "topk_recall_within_1.0m_ratio": 0.28,
+            "topk_recall_within_2.0m_count": 28,
+            "topk_recall_within_2.0m_ratio": 0.28,
+            "topk_recall_within_3.0m_count": 40,
+            "topk_recall_within_3.0m_ratio": 0.4
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 43.233272552490234,
+            "median_rank": 28.0,
+            "mrr": 0.11097496002912521,
+            "recall@1": 0.030741410329937935,
+            "recall@5": 0.16636528074741364
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 7,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N4_seed_123",
+        "variant": "N4",
+        "seed": 123,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2639.458165168762,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N4/seed_123/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.726812116574803,
+            "most_probable_distance_mean_m": 3.663811319604172,
+            "most_probable_distance_median_m": 4.436500613666562,
+            "most_probable_distance_std_m": 1.95965216462319,
+            "most_probable_within_1.0m_count": 20,
+            "most_probable_within_1.0m_ratio": 0.2,
+            "most_probable_within_2.0m_count": 21,
+            "most_probable_within_2.0m_ratio": 0.21,
+            "most_probable_within_3.0m_count": 33,
+            "most_probable_within_3.0m_ratio": 0.33,
+            "most_probable_yaw_error_max_deg": 179.99999893480106,
+            "most_probable_yaw_error_mean_deg": 67.0500004685881,
+            "most_probable_yaw_error_median_deg": 44.999999468056274,
+            "most_probable_yaw_error_std_deg": 71.85782208777367,
+            "nearest_topk_distance_max_m": 5.550900876113877,
+            "nearest_topk_distance_mean_m": 2.8159598552073515,
+            "nearest_topk_distance_median_m": 3.03107145272154,
+            "nearest_topk_distance_std_m": 1.9496141160193199,
+            "nearest_topk_within_1.0m_count": 30,
+            "nearest_topk_within_1.0m_ratio": 0.3,
+            "nearest_topk_within_2.0m_count": 32,
+            "nearest_topk_within_2.0m_ratio": 0.32,
+            "nearest_topk_within_3.0m_count": 49,
+            "nearest_topk_within_3.0m_ratio": 0.49,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.22400000000000003,
+            "topk_precision_within_2.0m_mean": 0.234,
+            "topk_precision_within_3.0m_mean": 0.32400000000000007,
+            "topk_recall_within_1.0m_count": 30,
+            "topk_recall_within_1.0m_ratio": 0.3,
+            "topk_recall_within_2.0m_count": 32,
+            "topk_recall_within_2.0m_ratio": 0.32,
+            "topk_recall_within_3.0m_count": 49,
+            "topk_recall_within_3.0m_ratio": 0.49
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 49.46112060546875,
+            "median_rank": 38.0,
+            "mrr": 0.09885124862194061,
+            "recall@1": 0.028933092951774597,
+            "recall@5": 0.1428571492433548
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 123,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N7_seed_42",
+        "variant": "N7",
+        "seed": 42,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2762.16286110878,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N7/seed_42/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.543126341928897,
+            "most_probable_distance_mean_m": 3.7790383461850525,
+            "most_probable_distance_median_m": 4.575730919364742,
+            "most_probable_distance_std_m": 1.931513443447045,
+            "most_probable_within_1.0m_count": 18,
+            "most_probable_within_1.0m_ratio": 0.18,
+            "most_probable_within_2.0m_count": 19,
+            "most_probable_within_2.0m_ratio": 0.19,
+            "most_probable_within_3.0m_count": 30,
+            "most_probable_within_3.0m_ratio": 0.3,
+            "most_probable_yaw_error_max_deg": 179.99999992820415,
+            "most_probable_yaw_error_mean_deg": 63.90000037095891,
+            "most_probable_yaw_error_median_deg": 44.999998689045974,
+            "most_probable_yaw_error_std_deg": 68.29926276214084,
+            "nearest_topk_distance_max_m": 5.830952078204439,
+            "nearest_topk_distance_mean_m": 2.9177773189015936,
+            "nearest_topk_distance_median_m": 3.2500000114624323,
+            "nearest_topk_distance_std_m": 1.8913488627334396,
+            "nearest_topk_within_1.0m_count": 27,
+            "nearest_topk_within_1.0m_ratio": 0.27,
+            "nearest_topk_within_2.0m_count": 29,
+            "nearest_topk_within_2.0m_ratio": 0.29,
+            "nearest_topk_within_3.0m_count": 47,
+            "nearest_topk_within_3.0m_ratio": 0.47,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.18400000000000002,
+            "topk_precision_within_2.0m_mean": 0.2,
+            "topk_precision_within_3.0m_mean": 0.324,
+            "topk_recall_within_1.0m_count": 27,
+            "topk_recall_within_1.0m_ratio": 0.27,
+            "topk_recall_within_2.0m_count": 29,
+            "topk_recall_within_2.0m_ratio": 0.29,
+            "topk_recall_within_3.0m_count": 47,
+            "topk_recall_within_3.0m_ratio": 0.47
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 46.16094207763672,
+            "median_rank": 32.0,
+            "mrr": 0.10967417806386948,
+            "recall@1": 0.036166366189718246,
+            "recall@5": 0.14104881882667542
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 42,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N7_seed_7",
+        "variant": "N7",
+        "seed": 7,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2745.9747314453125,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N7/seed_7/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 6.54312643743637,
+            "most_probable_distance_mean_m": 3.835624988460067,
+            "most_probable_distance_median_m": 4.720245011457694,
+            "most_probable_distance_std_m": 1.9814403709047963,
+            "most_probable_within_1.0m_count": 21,
+            "most_probable_within_1.0m_ratio": 0.21,
+            "most_probable_within_2.0m_count": 21,
+            "most_probable_within_2.0m_ratio": 0.21,
+            "most_probable_within_3.0m_count": 22,
+            "most_probable_within_3.0m_ratio": 0.22,
+            "most_probable_yaw_error_max_deg": 179.9999993300223,
+            "most_probable_yaw_error_mean_deg": 64.80000087995344,
+            "most_probable_yaw_error_median_deg": 44.99999485743891,
+            "most_probable_yaw_error_std_deg": 69.80658498439468,
+            "nearest_topk_distance_max_m": 5.59016978381343,
+            "nearest_topk_distance_mean_m": 3.000067187805038,
+            "nearest_topk_distance_median_m": 3.4999999403953552,
+            "nearest_topk_distance_std_m": 1.9342884391328683,
+            "nearest_topk_within_1.0m_count": 27,
+            "nearest_topk_within_1.0m_ratio": 0.27,
+            "nearest_topk_within_2.0m_count": 28,
+            "nearest_topk_within_2.0m_ratio": 0.28,
+            "nearest_topk_within_3.0m_count": 42,
+            "nearest_topk_within_3.0m_ratio": 0.42,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.21,
+            "topk_precision_within_2.0m_mean": 0.22000000000000003,
+            "topk_precision_within_3.0m_mean": 0.28,
+            "topk_recall_within_1.0m_count": 27,
+            "topk_recall_within_1.0m_ratio": 0.27,
+            "topk_recall_within_2.0m_count": 28,
+            "topk_recall_within_2.0m_ratio": 0.28,
+            "topk_recall_within_3.0m_count": 42,
+            "topk_recall_within_3.0m_ratio": 0.42
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 45.85171890258789,
+            "median_rank": 30.0,
+            "mrr": 0.10263821482658386,
+            "recall@1": 0.030741410329937935,
+            "recall@5": 0.14466546475887299
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 7,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "complete",
+        "status": "complete",
+        "name": "N7_seed_123",
+        "variant": "N7",
+        "seed": 123,
+        "canonical_full": false,
+        "attempts_this_run": 1,
+        "return_codes": [
+          0
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 2759.138615846634,
+        "archived_stale_output": null,
+        "summary": {
+          "checkpoint": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/stage2/N7/seed_123/best_adapter.pth",
+          "checkpoint_load": "base+adapter:/home/rajitha/GAIA/snapViT/models/provvisiorio/t1/best_model.pth",
+          "data_roots": [
+            "/home/rajitha/GAIA/snapViT/datasets/tempovine/dataset_tempovine_mar_run1"
+          ],
+          "grid_range_m": 5.0,
+          "grid_resolution_m": 0.25,
+          "localization": {
+            "most_probable_distance_max_m": 7.0710678144996555,
+            "most_probable_distance_mean_m": 3.796358485219139,
+            "most_probable_distance_median_m": 4.42267509890726,
+            "most_probable_distance_std_m": 1.9518036003849495,
+            "most_probable_within_1.0m_count": 18,
+            "most_probable_within_1.0m_ratio": 0.18,
+            "most_probable_within_2.0m_count": 19,
+            "most_probable_within_2.0m_ratio": 0.19,
+            "most_probable_within_3.0m_count": 29,
+            "most_probable_within_3.0m_ratio": 0.29,
+            "most_probable_yaw_error_max_deg": 179.99999992820415,
+            "most_probable_yaw_error_mean_deg": 60.3000017219157,
+            "most_probable_yaw_error_median_deg": 44.99999798373162,
+            "most_probable_yaw_error_std_deg": 68.31112042741599,
+            "nearest_topk_distance_max_m": 6.051859248002049,
+            "nearest_topk_distance_mean_m": 2.6871025167590448,
+            "nearest_topk_distance_median_m": 2.7270817292346603,
+            "nearest_topk_distance_std_m": 1.8683495535667447,
+            "nearest_topk_within_1.0m_count": 30,
+            "nearest_topk_within_1.0m_ratio": 0.3,
+            "nearest_topk_within_2.0m_count": 30,
+            "nearest_topk_within_2.0m_ratio": 0.3,
+            "nearest_topk_within_3.0m_count": 56,
+            "nearest_topk_within_3.0m_ratio": 0.56,
+            "num_scenes": 100,
+            "topk_precision_within_1.0m_mean": 0.222,
+            "topk_precision_within_2.0m_mean": 0.23199999999999998,
+            "topk_precision_within_3.0m_mean": 0.358,
+            "topk_recall_within_1.0m_count": 30,
+            "topk_recall_within_1.0m_ratio": 0.3,
+            "topk_recall_within_2.0m_count": 30,
+            "topk_recall_within_2.0m_ratio": 0.3,
+            "topk_recall_within_3.0m_count": 56,
+            "topk_recall_within_3.0m_ratio": 0.56
+          },
+          "localization_subset_seed": 42,
+          "localization_thresholds_m": [
+            1.0,
+            2.0,
+            3.0
+          ],
+          "manifest_split": "test",
+          "num_localization_scenes": 100,
+          "num_retrieval_scenes": 553,
+          "num_ugv_views": 8,
+          "retrieval": {
+            "mean_rank": 46.00361633300781,
+            "median_rank": 35.0,
+            "mrr": 0.10142167657613754,
+            "recall@1": 0.028933092951774597,
+            "recall@5": 0.13381555676460266
+          },
+          "scene_manifest": "/home/rajitha/GAIA/snapViT/runs/fusion_ablations/heldout_run1_manifest.json",
+          "scene_manifest_sha256": "202023201a27f87b06dcb5d6aaf83d2487040691b144d593150d1187017c4cfb",
+          "seed": 123,
+          "top_k": 5,
+          "yaw_candidates_deg": [
+            -90.0,
+            -45.0,
+            0.0,
+            45.0,
+            90.0,
+            135.0,
+            180.0
+          ]
+        }
+      },
+      {
+        "state": "failed",
+        "status": "failed",
+        "name": "canonical_N5_seed_7_full",
+        "variant": "N5",
+        "seed": 7,
+        "canonical_full": true,
+        "attempts_this_run": 2,
+        "return_codes": [
+          1,
+          1
+        ],
+        "runner_errors": [],
+        "runtime_seconds": 14.21155858039856,
+        "archived_stale_output": null,
+        "error": "Evaluation did not produce a complete, count-validated summary"
+      }
+    ]
+  }
+}
+Report updated: 20 runs, 13 variants
+Campaign complete. Read /home/rajitha/GAIA/snapViT/runs/fusion_ablations/summary.md

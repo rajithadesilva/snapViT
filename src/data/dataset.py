@@ -48,6 +48,8 @@ class VineyardDataset(Dataset):
                     continue
                 if 'ugv_rgb' in entry_name or 'ugv_depth' in entry_name or 'temp' in entry_name:
                     continue
+                if not os.path.isfile(os.path.join(entry_path, 'metadata.json')):
+                    continue
                 scene_folders.append(entry_path)
 
         return list(dict.fromkeys(scene_folders))
@@ -57,6 +59,20 @@ class VineyardDataset(Dataset):
 
     def __getitem__(self, idx):
         scene_path = self.scene_folders[idx]
+        scene_resolved = os.path.realpath(scene_path)
+        owning_roots = [
+            root_dir
+            for root_dir in self.root_dirs
+            if os.path.commonpath(
+                [scene_resolved, os.path.realpath(root_dir)]
+            ) == os.path.realpath(root_dir)
+        ]
+        if len(owning_roots) != 1:
+            raise RuntimeError(
+                f"Expected exactly one owning dataset root for {scene_path}, "
+                f"found {owning_roots}."
+            )
+        owning_root = owning_roots[0]
         with open(os.path.join(scene_path, 'metadata.json'), 'r') as f:
             metadata = json.load(f)
 
@@ -67,12 +83,12 @@ class VineyardDataset(Dataset):
             scene_rel = os.path.join(scene_path, p)
             if os.path.exists(scene_rel):
                 return scene_rel
-            for root_dir in self.root_dirs:
-                root_rel = os.path.join(root_dir, p)
-                if os.path.exists(root_rel):
-                    return root_rel
-            # fallback to scene-relative even if it doesn't exist (so errors are informative)
-            return scene_rel
+            root_rel = os.path.join(owning_root, p)
+            if os.path.exists(root_rel):
+                return root_rel
+            # Report the owning-root path for root-relative metadata. Never fall
+            # through to another run that happens to contain the same filename.
+            return root_rel
 
         # 1. Load Overhead UAV Image
         uav_image_path = resolve_path(metadata['uav_image_path'])
