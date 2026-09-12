@@ -32,7 +32,8 @@ class AblationConfig:
         'data_root': '/media/hdd/ale_navone/GAIA/tempovine/dataset_tempovine_new',
         'train_img_size': (224, 224),
         'ground_fusion_mode': 'mlp',
-        'use_height_positional_encoding': False,
+        'ground_fusion_variant': 'height_aware_mean_max',
+        'use_height_positional_encoding': True,
         'num_ugv_views': 8,
         'grid_size': (34, 34, 8),
         'grid_resolution': 0.3,
@@ -107,13 +108,6 @@ class AblationConfig:
         if not isinstance(loaded, dict):
             raise ValueError('Ablation config JSON must contain a top-level object.')
 
-        loaded_base_config = loaded.get('base_config')
-        if isinstance(loaded_base_config, dict):
-            if 'ground_fusion_mode' not in loaded_base_config:
-                resolved['base_config']['ground_fusion_mode'] = 'avg'
-            if 'use_height_positional_encoding' not in loaded_base_config:
-                resolved['base_config']['use_height_positional_encoding'] = False
-
         cls._deep_update(resolved, loaded)
         cls.validate(resolved)
         return resolved
@@ -157,8 +151,9 @@ class AblationConfig:
             if key not in base_cfg:
                 raise ValueError(f"Missing required key in base_config: {key}")
 
-        base_cfg.setdefault('ground_fusion_mode', 'avg')
-        base_cfg.setdefault('use_height_positional_encoding', False)
+        base_cfg.setdefault('ground_fusion_mode', 'mlp')
+        base_cfg.setdefault('ground_fusion_variant', 'height_aware_mean_max')
+        base_cfg.setdefault('use_height_positional_encoding', True)
 
         # JSON stores arrays as lists; convert tuple-like fields used in the pipeline.
         base_cfg['train_img_size'] = tuple(base_cfg['train_img_size'])
