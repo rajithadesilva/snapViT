@@ -37,6 +37,9 @@ DEFAULT_CONFIG = {
     "vit_model": "vit_small_patch16_224",
     "train_img_size": (224, 224),
     "feature_dim": 128,
+    "ground_fusion_mode": "mlp",
+    "ground_fusion_variant": "height_aware_mean_max",
+    "use_height_positional_encoding": True,
     "num_ugv_views": 1,
     "grid_size": (34, 34, 8),
     "grid_resolution": 0.3,
@@ -134,6 +137,7 @@ def main(args: argparse.Namespace) -> None:
 
     for key in (
         "ground_fusion_mode",
+        "ground_fusion_variant",
         "use_height_positional_encoding",
         "grid_size",
         "grid_resolution",
