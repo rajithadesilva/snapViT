@@ -58,6 +58,7 @@ class GroundEncoderFusionTests(unittest.TestCase):
         feature_dim=3,
         fusion_mode="mlp",
         use_height_positional_encoding=False,
+        fusion_variant=None,
     ):
         extractor = _DummyFeatureExtractor(embed_dim)
         with patch.object(snapvit, "create_feature_extractor", return_value=extractor):
@@ -67,6 +68,7 @@ class GroundEncoderFusionTests(unittest.TestCase):
                 pretrained=False,
                 fusion_mode=fusion_mode,
                 use_height_positional_encoding=use_height_positional_encoding,
+                fusion_variant=fusion_variant,
             )
 
     @staticmethod
@@ -426,6 +428,23 @@ class GroundEncoderFusionTests(unittest.TestCase):
                 fusion_mode="avg",
                 use_height_positional_encoding=True,
             )
+        with self.assertRaisesRegex(ValueError, "supports only height_aware_mean_max"):
+            self._make_encoder(fusion_variant="attention")
+        with self.assertRaisesRegex(ValueError, "Height-aware mean/max fusion requires"):
+            self._make_encoder(fusion_variant="height_aware_mean_max")
+
+        legacy_height_aware = self._make_encoder(use_height_positional_encoding=True)
+        explicit_height_aware = self._make_encoder(
+            use_height_positional_encoding=True,
+            fusion_variant="HEIGHT_AWARE_MEAN_MAX",
+        )
+        self.assertEqual(legacy_height_aware.fusion_variant, "height_aware_mean_max")
+        self.assertEqual(explicit_height_aware.fusion_variant, "height_aware_mean_max")
+        load_result = explicit_height_aware.load_state_dict(
+            legacy_height_aware.state_dict(), strict=True
+        )
+        self.assertEqual(load_result.missing_keys, [])
+        self.assertEqual(load_result.unexpected_keys, [])
 
         avg_source = self._make_encoder(fusion_mode="avg")
         avg_target = self._make_encoder(fusion_mode="avg")

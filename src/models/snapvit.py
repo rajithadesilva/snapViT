@@ -194,6 +194,7 @@ class GroundEncoder(nn.Module):
     Encodes multiple ground-level images into a single BEV feature map.
     """
     _FUSION_MODES = {"avg", "mlp"}
+    _FUSION_VARIANT = "height_aware_mean_max"
     _HEIGHT_ENCODING_DIM = 16
     _FUSION_HIDDEN_DIM = 256
 
@@ -204,6 +205,7 @@ class GroundEncoder(nn.Module):
         pretrained=True,
         fusion_mode='mlp', # "avg" or "mlp"
         use_height_positional_encoding=True,
+        fusion_variant=None,
     ):
         super().__init__()
         if fusion_mode not in self._FUSION_MODES:
@@ -213,6 +215,21 @@ class GroundEncoder(nn.Module):
             )
         if type(use_height_positional_encoding) is not bool:
             raise TypeError("use_height_positional_encoding must be a bool.")
+        if fusion_variant is not None:
+            if not isinstance(fusion_variant, str):
+                raise TypeError("ground_fusion_variant must be a string or None.")
+            fusion_variant = fusion_variant.lower()
+            if fusion_variant != self._FUSION_VARIANT:
+                raise ValueError(
+                    f"Unsupported ground fusion variant '{fusion_variant}'. "
+                    f"This branch supports only {self._FUSION_VARIANT}."
+                )
+            if fusion_mode != "mlp" or not use_height_positional_encoding:
+                raise ValueError(
+                    "Height-aware mean/max fusion requires "
+                    "ground_fusion_mode='mlp' and "
+                    "use_height_positional_encoding=true."
+                )
         if fusion_mode == "avg" and use_height_positional_encoding:
             raise ValueError(
                 "Height positional encoding is only supported when ground_fusion_mode='mlp'."
@@ -226,6 +243,12 @@ class GroundEncoder(nn.Module):
         self.feature_dim = feature_dim
         self.fusion_mode = fusion_mode
         self.use_height_positional_encoding = use_height_positional_encoding
+        # ``None`` preserves loading of configs created before variants were named.
+        self.fusion_variant = (
+            self._FUSION_VARIANT
+            if fusion_mode == "mlp" and use_height_positional_encoding
+            else None
+        )
 
         if fusion_mode == "avg":
             # Preserve the original global-average fusion path and checkpoint keys.
@@ -275,8 +298,18 @@ class GroundEncoder(nn.Module):
 
     def _height_positional_encoding(self, heights, grid_points_3d, batch_index, batch_size):
         """Encode continuous world heights relative to the sample's vertical grid."""
+        working_dtype = (
+            torch.float32
+            if heights.dtype in (torch.float16, torch.bfloat16)
+            else heights.dtype
+        )
         if not self.use_height_positional_encoding:
-            return heights.new_zeros((heights.numel(), self._HEIGHT_ENCODING_DIM))
+            return torch.zeros(
+                heights.numel(),
+                self._HEIGHT_ENCODING_DIM,
+                device=heights.device,
+                dtype=working_dtype,
+            )
 
         if not torch.is_tensor(grid_points_3d):
             raise ValueError(
@@ -305,7 +338,9 @@ class GroundEncoder(nn.Module):
         if z_levels < 2:
             raise ValueError("Height positional encoding requires at least two vertical grid levels.")
 
-        z_values = height_grid[batch_index, ..., 2].to(device=heights.device, dtype=torch.float32)
+        z_values = height_grid[batch_index, ..., 2].to(
+            device=heights.device, dtype=working_dtype
+        )
         if not torch.isfinite(z_values).all():
             raise ValueError("grid_points_3d contains non-finite height values.")
 
@@ -315,17 +350,19 @@ class GroundEncoder(nn.Module):
         if not torch.isfinite(z_span) or z_span <= 0:
             raise ValueError("Height positional encoding requires a finite, non-zero vertical grid span.")
 
-        positions = ((heights.float() - z_min) / z_span).clamp(0.0, 1.0)
+        positions = (
+            (heights.to(dtype=working_dtype) - z_min) / z_span
+        ).clamp(0.0, 1.0)
         positions = positions * float(z_levels - 1)
 
         half_dim = self._HEIGHT_ENCODING_DIM // 2
         frequencies = torch.exp(
-            torch.arange(half_dim, device=heights.device, dtype=torch.float32)
+            torch.arange(half_dim, device=heights.device, dtype=working_dtype)
             * (-math.log(10000.0) / half_dim)
         )
         angles = positions.unsqueeze(-1) * frequencies.unsqueeze(0)
         encoding = torch.stack((angles.sin(), angles.cos()), dim=-1).flatten(start_dim=-2)
-        return encoding.to(dtype=heights.dtype)
+        return encoding
 
     def _fuse_projected_features(
         self,
@@ -358,6 +395,11 @@ class GroundEncoder(nn.Module):
         num_view_cells = N_views * num_bev_cells
         device = src_feats.device
         dtype = src_feats.dtype
+        aggregation_dtype = (
+            torch.float32
+            if dtype in (torch.float16, torch.bfloat16)
+            else dtype
+        )
         view_ids = torch.arange(N_views, device=device).view(N_views, 1).expand(N_views, P)
 
         # Validate every sample's vertical grid even when it has no valid projected points.
@@ -396,26 +438,30 @@ class GroundEncoder(nn.Module):
                 grid_points_3d=grid_points_3d,
                 batch_index=b,
                 batch_size=B,
-            ).to(dtype=features.dtype)
+            )
             token_inputs = torch.cat((self.feature_norm(features), height_encoding), dim=-1)
-            tokens = self.token_mlp(token_inputs).to(dtype=dtype)
+            tokens = self.token_mlp(token_inputs).to(dtype=aggregation_dtype)
 
             group_indices = contributing_views * num_bev_cells + bev_indices
             group_indices_expanded = group_indices.unsqueeze(0).expand(self.feature_dim, -1)
 
             token_sum = torch.zeros(
-                self.feature_dim, num_view_cells, device=device, dtype=dtype
+                self.feature_dim, num_view_cells, device=device, dtype=aggregation_dtype
             ).scatter_add(1, group_indices_expanded, tokens.t())
 
-            counts = torch.zeros(num_view_cells, device=device, dtype=dtype)
-            counts = counts.scatter_add(0, group_indices, torch.ones_like(group_indices, dtype=dtype))
+            counts = torch.zeros(num_view_cells, device=device, dtype=aggregation_dtype)
+            counts = counts.scatter_add(
+                0,
+                group_indices,
+                torch.ones_like(group_indices, dtype=aggregation_dtype),
+            )
             group_valid = counts > 0
 
             token_max = torch.full(
                 (self.feature_dim, num_view_cells),
                 -torch.inf,
                 device=device,
-                dtype=dtype,
+                dtype=aggregation_dtype,
             ).scatter_reduce(
                 dim=1,
                 index=group_indices_expanded,
@@ -428,9 +474,11 @@ class GroundEncoder(nn.Module):
             token_max = torch.where(group_valid.unsqueeze(0), token_max, torch.zeros_like(token_max))
 
             pooled_columns = torch.cat((token_mean, token_max), dim=0).t()
-            column_update = self.column_mlp(pooled_columns).to(dtype=dtype)
+            column_update = self.column_mlp(pooled_columns).to(dtype=aggregation_dtype)
             column_features = token_mean.t() + column_update
-            column_features = column_features * group_valid.unsqueeze(-1).to(dtype=dtype)
+            column_features = column_features * group_valid.unsqueeze(-1).to(
+                dtype=aggregation_dtype
+            )
 
             per_view_features = column_features.view(
                 N_views, H_feat, W_feat, self.feature_dim
@@ -439,9 +487,11 @@ class GroundEncoder(nn.Module):
 
             valid_view_count = per_view_validity.sum(dim=0)
             bev_features_b = per_view_features.sum(dim=0)
-            bev_features_b = bev_features_b / valid_view_count.clamp_min(1).unsqueeze(0).to(dtype=dtype)
+            bev_features_b = bev_features_b / valid_view_count.clamp_min(1).unsqueeze(0).to(
+                dtype=aggregation_dtype
+            )
 
-            bev_features_list.append(bev_features_b)
+            bev_features_list.append(bev_features_b.to(dtype=dtype))
             validity_list.append(per_view_validity.any(dim=0, keepdim=True))
 
         return torch.stack(bev_features_list, dim=0), torch.stack(validity_list, dim=0)
@@ -870,12 +920,21 @@ class SnapViT(nn.Module):
 
         pretrained_backbones = config.get('pretrained_backbones', True)
 
+        fusion_mode = config.get('ground_fusion_mode', 'mlp')
+        use_height_positional_encoding = config.get(
+            'use_height_positional_encoding', fusion_mode == 'mlp'
+        )
+        fusion_variant = config.get('ground_fusion_variant')
+        if fusion_variant is None and fusion_mode == 'mlp' and use_height_positional_encoding:
+            fusion_variant = GroundEncoder._FUSION_VARIANT
+
         self.ground_encoder = GroundEncoder(
             model_name=shared_model_name,
             feature_dim=config['feature_dim'],
             pretrained=pretrained_backbones,
-            fusion_mode=config.get('ground_fusion_mode', 'avg'),
-            use_height_positional_encoding=config.get('use_height_positional_encoding', False),
+            fusion_mode=fusion_mode,
+            use_height_positional_encoding=use_height_positional_encoding,
+            fusion_variant=fusion_variant,
         )
         self.overhead_encoder = OverheadEncoder(
             model_name=shared_model_name,

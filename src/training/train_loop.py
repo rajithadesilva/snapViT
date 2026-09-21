@@ -26,7 +26,8 @@ CONFIG = {
     'train_img_size': (224, 224),
     'feature_dim': 128,
     'ground_fusion_mode': 'mlp',
-    'use_height_positional_encoding': False,
+    'ground_fusion_variant': 'height_aware_mean_max',
+    'use_height_positional_encoding': True,
     'num_ugv_views': 1,
     'grid_size': (34, 34, 8),
     'grid_resolution': 0.3,
@@ -58,8 +59,9 @@ def normalize_config(config):
 
     resolved.setdefault('num_workers', 4)
     resolved.setdefault('pin_memory', True)
-    resolved.setdefault('ground_fusion_mode', 'avg')
-    resolved.setdefault('use_height_positional_encoding', False)
+    resolved.setdefault('ground_fusion_mode', 'mlp')
+    resolved.setdefault('ground_fusion_variant', 'height_aware_mean_max')
+    resolved.setdefault('use_height_positional_encoding', True)
     resolved.setdefault('use_pixel_loss', True)
     resolved.setdefault('use_global_loss', True)
     resolved.setdefault('pixel_loss_weight', 1.0)
@@ -141,10 +143,6 @@ def _select_loss(config, pixel_loss, global_loss, epoch):
 def train_loop(config, train_dataloader=None, val_dataloader=None, save_history=True, writer_log_dir='runs'):
     training_config = CONFIG.copy()
     if config is not None:
-        if 'ground_fusion_mode' not in config:
-            training_config['ground_fusion_mode'] = 'avg'
-        if 'use_height_positional_encoding' not in config:
-            training_config['use_height_positional_encoding'] = False
         training_config.update(config)
 
     resolved = normalize_config(training_config)
@@ -342,8 +340,9 @@ def main():
     if args.config:
         with open(args.config, 'r') as f:
             config = json.load(f)
-        config.setdefault('ground_fusion_mode', 'avg')
-        config.setdefault('use_height_positional_encoding', False)
+        config.setdefault('ground_fusion_mode', 'mlp')
+        config.setdefault('ground_fusion_variant', 'height_aware_mean_max')
+        config.setdefault('use_height_positional_encoding', True)
         CONFIG.update(config)
 
     train_loop(CONFIG)

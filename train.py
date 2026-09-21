@@ -20,7 +20,8 @@ CONFIG = {
     'train_img_size': (224, 224),
     'feature_dim': 128,
     'ground_fusion_mode': 'mlp',
-    'use_height_positional_encoding': False,
+    'ground_fusion_variant': 'height_aware_mean_max',
+    'use_height_positional_encoding': True,
     'num_ugv_views': 8,
     'grid_size': (34, 34, 8), # Smaller grid for faster training
     'grid_resolution': 0.3, # meters per grid cell

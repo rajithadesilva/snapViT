@@ -26,6 +26,7 @@ def apply_checkpoint_fusion_config(config: dict, checkpoint_path: str) -> None:
             checkpoint_config = json.load(f)
         for key in (
             "ground_fusion_mode",
+            "ground_fusion_variant",
             "use_height_positional_encoding",
             "grid_size",
             "grid_resolution",
